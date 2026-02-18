@@ -37,6 +37,7 @@ import { findLegacyConfigIssues } from "./legacy.js";
 import { applyMergePatch } from "./merge-patch.js";
 import { normalizeConfigPaths } from "./normalize-paths.js";
 import { resolveConfigPath, resolveDefaultConfigCandidates, resolveStateDir } from "./paths.js";
+import { scrubSecrets } from "../security/log-scrubber.js";
 import { applyConfigOverrides } from "./runtime-overrides.js";
 import type { OpenClawConfig, ConfigFileSnapshot, LegacyConfigIssue } from "./types.js";
 import {
@@ -565,7 +566,7 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
           .join("\n");
         if (!loggedInvalidConfigs.has(configPath)) {
           loggedInvalidConfigs.add(configPath);
-          deps.logger.error(`Invalid config at ${configPath}:\\n${details}`);
+          deps.logger.error(scrubSecrets(`Invalid config at ${configPath}:\\n${details}`));
         }
         const error = new Error("Invalid config");
         (error as { code?: string; details?: string }).code = "INVALID_CONFIG";
@@ -576,7 +577,7 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
         const details = validated.warnings
           .map((iss) => `- ${iss.path || "<root>"}: ${iss.message}`)
           .join("\n");
-        deps.logger.warn(`Config warnings:\\n${details}`);
+        deps.logger.warn(scrubSecrets(`Config warnings:\\n${details}`));
       }
       warnIfConfigFromFuture(validated.config, deps.logger);
       const cfg = applyModelDefaults(
@@ -621,7 +622,7 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
       if (error?.code === "INVALID_CONFIG") {
         return {};
       }
-      deps.logger.error(`Failed to read config at ${configPath}`, err);
+      deps.logger.error(scrubSecrets(`Failed to read config at ${configPath}`), err);
       return {};
     }
   }
