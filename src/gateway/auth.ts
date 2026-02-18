@@ -5,6 +5,7 @@ import type {
   GatewayTrustedProxyConfig,
 } from "../config/config.js";
 import { readTailscaleWhoisIdentity, type TailscaleWhoisIdentity } from "../infra/tailscale.js";
+import { recordAuthEvent } from "../security/auth-audit-log.js";
 import { safeEqualSecret } from "../security/secret-equal.js";
 import {
   AUTH_RATE_LIMIT_SCOPE_SHARED_SECRET,
@@ -291,6 +292,31 @@ export async function authorizeGatewayConnect(params: {
   /** Client IP used for rate-limit tracking. Falls back to proxy-aware request IP resolution. */
   clientIp?: string;
   /** Optional limiter scope; defaults to shared-secret auth scope. */
+  rateLimitScope?: string;
+}): Promise<GatewayAuthResult> {
+  const result = await authorizeGatewayConnectInternal(params);
+  const ip =
+    params.clientIp ??
+    resolveRequestClientIp(params.req, params.trustedProxies) ??
+    params.req?.socket?.remoteAddress;
+  recordAuthEvent({
+    type: result.ok ? "auth_success" : "auth_failure",
+    ip: ip ?? undefined,
+    method: result.method,
+    reason: result.ok ? undefined : result.reason,
+    timestamp: Date.now(),
+  });
+  return result;
+}
+
+async function authorizeGatewayConnectInternal(params: {
+  auth: ResolvedGatewayAuth;
+  connectAuth?: ConnectAuth | null;
+  req?: IncomingMessage;
+  trustedProxies?: string[];
+  tailscaleWhois?: TailscaleWhoisLookup;
+  rateLimiter?: AuthRateLimiter;
+  clientIp?: string;
   rateLimitScope?: string;
 }): Promise<GatewayAuthResult> {
   const { auth, connectAuth, req, trustedProxies } = params;
