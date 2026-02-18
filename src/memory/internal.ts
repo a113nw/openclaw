@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { isWithinWorkspace } from "../security/path-boundary.js";
 import { runTasksWithConcurrency } from "../utils/run-with-concurrency.js";
 
 export type MemoryFileEntry = {
@@ -41,7 +42,14 @@ export function normalizeExtraMemoryPaths(workspaceDir: string, extraPaths?: str
     .map((value) =>
       path.isAbsolute(value) ? path.resolve(value) : path.resolve(workspaceDir, value),
     );
-  return Array.from(new Set(resolved));
+  const unique = Array.from(new Set(resolved));
+  return unique.filter((p) => {
+    if (!isWithinWorkspace(workspaceDir, p)) {
+      console.warn(`[memory] rejecting extra path outside workspace: ${p}`);
+      return false;
+    }
+    return true;
+  });
 }
 
 export function isMemoryPath(relPath: string): boolean {
