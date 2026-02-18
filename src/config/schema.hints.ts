@@ -102,12 +102,26 @@ const SENSITIVE_KEY_WHITELIST_SUFFIXES = [
   "tokenlimit",
   "tokenbudget",
   "passwordFile",
+  "publickey",
+  "credentialhelper",
+  "preferredcredentials",
 ] as const;
 const NORMALIZED_SENSITIVE_KEY_WHITELIST_SUFFIXES = SENSITIVE_KEY_WHITELIST_SUFFIXES.map((suffix) =>
   suffix.toLowerCase(),
 );
 
-const SENSITIVE_PATTERNS = [/token$/i, /password/i, /secret/i, /api.?key/i];
+const SENSITIVE_PATTERNS = [
+  /token$/i,
+  /password/i,
+  /secret/i,
+  /api.?key/i,
+  /bearer/i,
+  /credential/i,
+  /access.?key/i,
+  /private.?key/i,
+  /signing.?key/i,
+  /client.?secret/i,
+];
 
 function isWhitelistedSensitivePath(path: string): boolean {
   const lowerPath = path.toLowerCase();
