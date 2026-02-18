@@ -543,6 +543,19 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
         return {};
       }
       const raw = deps.fs.readFileSync(configPath, "utf-8");
+      // Enforce 0o600 on existing config files (owner-only read/write).
+      try {
+        const stat = deps.fs.statSync(configPath);
+        // eslint-disable-next-line no-bitwise
+        if ((stat.mode & 0o077) !== 0) {
+          deps.fs.chmodSync(configPath, 0o600);
+          deps.logger.warn(
+            `Config file permissions were too open; corrected to 0600: ${configPath}`,
+          );
+        }
+      } catch {
+        // Best-effort — stat/chmod failures are non-fatal.
+      }
       const parsed = deps.json5.parse(raw);
       const { resolvedConfigRaw: resolvedConfig } = resolveConfigForRead(
         resolveConfigIncludesForRead(parsed, configPath, deps),
