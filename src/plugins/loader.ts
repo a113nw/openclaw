@@ -17,6 +17,10 @@ import {
 import { discoverOpenClawPlugins } from "./discovery.js";
 import { initializeGlobalHookRunner } from "./hook-runner-global.js";
 import { loadPluginManifestRegistry } from "./manifest-registry.js";
+import {
+  createRestrictedPluginApi,
+  type PluginCapability,
+} from "../security/plugin-capabilities.js";
 import { createPluginRegistry, type PluginRecord, type PluginRegistry } from "./registry.js";
 import { setActivePluginRegistry } from "./runtime.js";
 import { createPluginRuntime } from "./runtime/index.js";
@@ -430,10 +434,17 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
       continue;
     }
 
-    const api = createApi(record, {
+    const rawApi = createApi(record, {
       config: cfg,
       pluginConfig: validatedConfig.value,
     });
+    // If the plugin definition declares capabilities, enforce them.
+    const declaredCapabilities = (
+      definition as { capabilities?: PluginCapability[] }
+    )?.capabilities;
+    const api = declaredCapabilities
+      ? createRestrictedPluginApi(rawApi, declaredCapabilities)
+      : rawApi;
 
     try {
       const result = register(api);
