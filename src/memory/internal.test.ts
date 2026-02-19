@@ -20,7 +20,8 @@ describe("normalizeExtraMemoryPaths", () => {
       absPath,
       "",
     ]);
-    expect(result).toEqual([path.resolve(workspaceDir, "notes"), absPath]);
+    // Absolute paths outside the workspace are rejected for security (HIGH-08).
+    expect(result).toEqual([path.resolve(workspaceDir, "notes")]);
   });
 });
 
