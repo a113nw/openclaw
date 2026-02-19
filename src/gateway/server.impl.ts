@@ -57,6 +57,7 @@ import { createAgentEventHandler } from "./server-chat.js";
 import { createGatewayCloseHandler } from "./server-close.js";
 import { buildGatewayCronService } from "./server-cron.js";
 import { startGatewayDiscovery } from "./server-discovery-runtime.js";
+import { isLoopbackHost } from "./net.js";
 import { applyGatewayLaneConcurrency } from "./server-lanes.js";
 import { startGatewayMaintenanceTimers } from "./server-maintenance.js";
 import { GATEWAY_EVENTS, listGatewayMethods } from "./server-methods-list.js";
@@ -285,11 +286,13 @@ export async function startGatewayServer(
   let hooksConfig = runtimeConfig.hooksConfig;
   const canvasHostEnabled = runtimeConfig.canvasHostEnabled;
 
-  // Create auth rate limiter only when explicitly configured.
+  // Create auth rate limiter when configured, or by default for non-loopback binds.
   const rateLimitConfig = cfgAtStart.gateway?.auth?.rateLimit;
   const authRateLimiter: AuthRateLimiter | undefined = rateLimitConfig
     ? createAuthRateLimiter(rateLimitConfig)
-    : undefined;
+    : !isLoopbackHost(bindHost)
+      ? createAuthRateLimiter()
+      : undefined;
 
   let controlUiRootState: ControlUiRootState | undefined;
   if (controlUiRootOverride) {

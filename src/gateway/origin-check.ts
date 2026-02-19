@@ -1,3 +1,4 @@
+import { isAllowedHostHeader } from "../security/host-validation.js";
 import { isLoopbackHost, normalizeHostHeader, resolveHostName } from "./net.js";
 
 type OriginCheckResult = { ok: true } | { ok: false; reason: string };
@@ -45,6 +46,10 @@ export function checkBrowserOrigin(params: {
 
   const requestHostname = resolveHostName(requestHost);
   if (isLoopbackHost(parsedOrigin.hostname) && isLoopbackHost(requestHostname)) {
+    // DNS rebinding check: verify the Host header is a known loopback name.
+    if (!isAllowedHostHeader(requestHostname, true)) {
+      return { ok: false, reason: "host header not allowed for loopback bind" };
+    }
     return { ok: true };
   }
 

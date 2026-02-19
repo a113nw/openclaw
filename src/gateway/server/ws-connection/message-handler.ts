@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import os from "node:os";
 import type { WebSocket } from "ws";
@@ -20,6 +21,7 @@ import { recordRemoteNodeInfo, refreshRemoteNodeBins } from "../../../infra/skil
 import { upsertPresence } from "../../../infra/system-presence.js";
 import { loadVoiceWakeConfig } from "../../../infra/voicewake.js";
 import { rawDataToString } from "../../../infra/ws.js";
+import { NonceCache } from "../../../security/nonce-cache.js";
 import type { createSubsystemLogger } from "../../../logging/subsystem.js";
 import { isGatewayCliClient, isWebchatClient } from "../../../utils/message-channel.js";
 import { resolveRuntimeServiceVersion } from "../../../version.js";
@@ -65,6 +67,9 @@ import { formatGatewayAuthFailureMessage, type AuthProvidedKind } from "./auth-m
 type SubsystemLogger = ReturnType<typeof createSubsystemLogger>;
 
 const DEVICE_SIGNATURE_SKEW_MS = 10 * 60 * 1000;
+
+/** Shared nonce cache for device signature replay protection. */
+const deviceSignatureNonceCache = new NonceCache();
 
 export function attachGatewayWsMessageHandler(params: {
   socket: WebSocket;
@@ -559,6 +564,27 @@ export function attachGatewayWsMessageHandler(params: {
             }
           } else if (!signatureOk) {
             rejectDeviceSignatureInvalid();
+            return;
+          }
+          // Replay protection: derive a nonce from the signature and reject duplicates.
+          const signatureNonce = crypto
+            .createHash("sha256")
+            .update(device.signature)
+            .digest("hex");
+          if (!deviceSignatureNonceCache.add(signatureNonce, DEVICE_SIGNATURE_SKEW_MS * 2)) {
+            setHandshakeState("failed");
+            setCloseCause("device-auth-invalid", {
+              reason: "device-signature-replay",
+              client: connectParams.client.id,
+              deviceId: device.id,
+            });
+            send({
+              type: "res",
+              id: frame.id,
+              ok: false,
+              error: errorShape(ErrorCodes.INVALID_REQUEST, "device signature replay detected"),
+            });
+            close(1008, "device signature replay detected");
             return;
           }
           devicePublicKey = normalizeDevicePublicKeyBase64Url(device.publicKey);
