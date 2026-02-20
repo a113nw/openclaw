@@ -3,6 +3,7 @@ import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../agents/defaults.js";
 import { resolveConfiguredModelRef } from "../agents/model-selection.js";
 import type { loadConfig } from "../config/config.js";
 import { getResolvedLoggerSettings } from "../logging.js";
+import { isLoopbackHost } from "./net.js";
 
 export function logGatewayStartup(params: {
   cfg: ReturnType<typeof loadConfig>;
@@ -10,7 +11,10 @@ export function logGatewayStartup(params: {
   bindHosts?: string[];
   port: number;
   tlsEnabled?: boolean;
-  log: { info: (msg: string, meta?: Record<string, unknown>) => void };
+  log: {
+    info: (msg: string, meta?: Record<string, unknown>) => void;
+    warn: (msg: string, meta?: Record<string, unknown>) => void;
+  };
   isNixMode: boolean;
 }) {
   const { provider: agentProvider, model: agentModel } = resolveConfiguredModelRef({
@@ -34,6 +38,14 @@ export function logGatewayStartup(params: {
     params.log.info(`listening on ${scheme}://${formatHost(host)}:${params.port}`);
   }
   params.log.info(`log file: ${getResolvedLoggerSettings().file}`);
+  const hasNonLoopback = hosts.some((h) => !isLoopbackHost(h));
+  if (hasNonLoopback && !params.tlsEnabled) {
+    params.log.warn(
+      "gateway: binding to non-loopback address without TLS — WebSocket traffic is unencrypted. " +
+        "Enable gateway.tls or use Tailscale/SSH tunnel for encrypted transport. " +
+        "See SECURITY.md for guidance.",
+    );
+  }
   if (params.isNixMode) {
     params.log.info("gateway: running in Nix mode (config managed externally)");
   }
