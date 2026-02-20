@@ -72,6 +72,25 @@ OpenClaw's web interface (Gateway Control UI + HTTP endpoints) is intended for *
 - If you need remote access, prefer an SSH tunnel or Tailscale serve/funnel (so the Gateway still binds to loopback), plus strong Gateway auth.
 - The Gateway HTTP surface includes the canvas host (`/__openclaw__/canvas/`, `/__openclaw__/a2ui/`). Treat canvas content as sensitive/untrusted and avoid exposing it beyond loopback unless you understand the risk.
 
+### Transport Security
+
+OpenClaw's gateway communicates with clients over WebSocket. The security of this transport depends on the bind configuration:
+
+**Default posture (loopback-only):** When the gateway binds to `127.0.0.1` / `::1` (the default), all traffic stays on the local machine. No network encryption is needed because packets never leave the host.
+
+**Non-loopback deployments:** When binding to a LAN address, `0.0.0.0`, or a Tailnet IP, WebSocket traffic crosses the network and **must** be protected by TLS or an encrypted tunnel.
+
+| Mode | Encryption | Identity Verification | Configuration |
+|------|-----------|----------------------|---------------|
+| Loopback (default) | N/A (local) | N/A | `gateway.bind="loopback"` |
+| TLS | Yes (TLS 1.3) | Optional (cert pinning) | `gateway.tls.enabled=true` |
+| Tailscale Serve | Yes (WireGuard) | Yes (Tailscale whois) | `gateway.tailscale.serve=true` |
+| SSH tunnel | Yes (SSH) | Yes (SSH keys) | External: `ssh -L` |
+
+**Runtime guard:** The gateway emits a startup warning when it detects binding to a non-loopback address without TLS enabled. This warns operators who may have inadvertently exposed unencrypted traffic.
+
+**Why not application-layer encryption?** Transport-layer options (TLS, WireGuard, SSH) already cover the threat model. Adding application-layer encryption over WebSocket would require key exchange, session key rotation, and forward secrecy — significant complexity without meaningful security benefit given the available transport options.
+
 ### Tailscale Trust Model
 
 **Trust boundary:** The local Tailscale daemon running on the same machine as the gateway.
@@ -422,7 +441,7 @@ These findings were assessed but deferred from this scaffolding due to architect
 | Finding | Severity | Why Deferred |
 |---------|----------|-------------|
 | HIGH-04 (`$include` path traversal) | High | Already fixed upstream (`isPathInside` with symlink resolution) |
-| MED-05 (session encryption) | Medium | Requires key management design |
+| MED-05 (session encryption) | Medium | Addressed: transport security guidance + runtime warning |
 | MED-06 (embedding content filtering) | Medium | Best implemented as optional security plugin hook |
 | MED-07 (approval request flooding) | Medium | Needs UX design for per-session rate limiting |
 | LOW-01 (device key encryption at rest) | Low | Requires passphrase/keychain integration |
@@ -435,6 +454,7 @@ These findings were assessed but deferred from this scaffolding due to architect
 - **CRIT-04** (Tailscale header trust) — Addressed: Trust model documented in "Tailscale Trust Model" section above
 - **HIGH-03** (exec allowlist argument bypass) — Addressed: Interpreter detection, runtime warnings, and audit findings
 - **MED-04** (plugin code signing) — Implemented: Ed25519 signing/verification, trust store, install-time and audit-time verification
+- **MED-05** (session encryption) — Addressed: transport security guidance + runtime warning in `server-startup-log.ts`
 
 ### Test Coverage
 
