@@ -24,7 +24,7 @@ import {
   getShellPathFromLoginShell,
   resolveShellEnvFallbackTimeoutMs,
 } from "../infra/shell-env.js";
-import { logInfo } from "../logger.js";
+import { logInfo, logWarn } from "../logger.js";
 import { parseAgentSessionKey, resolveAgentIdFromSessionKey } from "../routing/session-key.js";
 import { markBackgrounded, tail } from "./bash-process-registry.js";
 import {
@@ -713,6 +713,14 @@ export function createExecTool(
           env,
           platform: process.platform,
         });
+        if (allowlistEval.interpreterWarnings.length > 0) {
+          const unique = [...new Set(allowlistEval.interpreterWarnings)];
+          logWarn(
+            `exec allowlist: interpreter binary allowlisted (${unique.join(", ")}). ` +
+              "Allowlisting interpreters validates the binary path only, not arguments. " +
+              "Arbitrary code execution is possible via interpreter arguments.",
+          );
+        }
         const allowlistMatches = allowlistEval.allowlistMatches;
         const analysisOk = allowlistEval.analysisOk;
         const allowlistSatisfied =

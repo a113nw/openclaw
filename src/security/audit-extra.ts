@@ -10,6 +10,7 @@
 // Sync collectors
 export {
   collectAttackSurfaceSummaryFindings,
+  collectExecInterpreterFindings,
   collectExposureMatrixFindings,
   collectGatewayHttpSessionKeyOverrideFindings,
   collectHooksHardeningFindings,

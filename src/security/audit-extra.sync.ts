@@ -1,4 +1,5 @@
 import { isToolAllowedByPolicies } from "../agents/pi-tools.policy.js";
+import { isInterpreterBinary } from "../infra/exec-approvals-allowlist.js";
 import {
   resolveSandboxConfigForAgent,
   resolveSandboxToolPolicyForAgent,
@@ -965,6 +966,76 @@ export function collectExposureMatrixFindings(cfg: OpenClawConfig): SecurityAudi
         `Found groupPolicy="open" at:\n${openGroups.map((p) => `- ${p}`).join("\n")}\n` +
         "With tools.elevated enabled, a prompt injection in those rooms can become a high-impact incident.",
       remediation: `Set groupPolicy="allowlist" and keep elevated allowlists extremely tight.`,
+    });
+  }
+
+  return findings;
+}
+
+export function collectExecInterpreterFindings(cfg: OpenClawConfig): SecurityAuditFinding[] {
+  const findings: SecurityAuditFinding[] = [];
+  const agents = Array.isArray(cfg.agents?.list) ? cfg.agents.list : [];
+  const interpreterPatterns: string[] = [];
+
+  // Check exec allowlist entries from agents config
+  for (const agent of agents) {
+    if (!agent || typeof agent !== "object" || typeof agent.id !== "string") {
+      continue;
+    }
+    const allowlist = (agent as { exec?: { allowlist?: unknown[] } }).exec?.allowlist;
+    if (!Array.isArray(allowlist)) {
+      continue;
+    }
+    for (const entry of allowlist) {
+      const pattern =
+        typeof entry === "string"
+          ? entry
+          : typeof entry === "object" && entry
+            ? (entry as { pattern?: string }).pattern
+            : undefined;
+      if (!pattern) {
+        continue;
+      }
+      const basename = pattern.includes("/") ? (pattern.split("/").pop() ?? "") : pattern;
+      if (basename && isInterpreterBinary(basename)) {
+        interpreterPatterns.push(`${basename} (agent=${agent.id}, pattern=${pattern})`);
+      }
+    }
+  }
+
+  // Check global exec allowlist
+  const globalAllowlist = (cfg as { exec?: { allowlist?: unknown[] } }).exec?.allowlist;
+  if (Array.isArray(globalAllowlist)) {
+    for (const entry of globalAllowlist) {
+      const pattern =
+        typeof entry === "string"
+          ? entry
+          : typeof entry === "object" && entry
+            ? (entry as { pattern?: string }).pattern
+            : undefined;
+      if (!pattern) {
+        continue;
+      }
+      const basename = pattern.includes("/") ? (pattern.split("/").pop() ?? "") : pattern;
+      if (basename && isInterpreterBinary(basename)) {
+        interpreterPatterns.push(`${basename} (global, pattern=${pattern})`);
+      }
+    }
+  }
+
+  if (interpreterPatterns.length > 0) {
+    findings.push({
+      checkId: "exec.allowlist.interpreter_binary",
+      severity: "warn",
+      title: "Exec allowlist contains interpreter binaries",
+      detail:
+        "The exec allowlist validates binary paths only, not arguments. " +
+        "Allowlisting an interpreter (e.g. python3, bash, node) permits arbitrary code execution " +
+        "via interpreter arguments (e.g. `python3 -c 'import os; os.system(...)'`).\n" +
+        interpreterPatterns.map((entry) => `- ${entry}`).join("\n"),
+      remediation:
+        "Where possible, allowlist only non-interpreter binaries (grep, jq, curl). " +
+        "If interpreters are required, use sandbox mode or per-command allowlisting with argument constraints.",
     });
   }
 
