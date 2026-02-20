@@ -21,14 +21,18 @@ import {
   createRestrictedPluginApi,
   type PluginCapability,
 } from "../security/plugin-capabilities.js";
+import { createWorkerHost, type WorkerHost } from "../security/worker-bridge/main-host.js";
 import { createPluginRegistry, type PluginRecord, type PluginRegistry } from "./registry.js";
 import { setActivePluginRegistry } from "./runtime.js";
 import { createPluginRuntime } from "./runtime/index.js";
 import { validateJsonSchemaValue } from "./schema-validator.js";
 import type {
+  AnyAgentTool,
   OpenClawPluginDefinition,
   OpenClawPluginModule,
+  OpenClawPluginToolFactory,
   PluginDiagnostic,
+  PluginHookRegistration as TypedPluginHookRegistration,
   PluginLogger,
 } from "./types.js";
 
@@ -44,6 +48,7 @@ export type PluginLoadOptions = {
 };
 
 const registryCache = new Map<string, PluginRegistry>();
+const activeWorkers: WorkerHost[] = [];
 
 const defaultLogger = () => createSubsystemLogger("plugins");
 
@@ -254,6 +259,7 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
   );
 
   const seenIds = new Map<string, PluginRecord["origin"]>();
+  const isolatedWorkers: WorkerHost[] = [];
   const memorySlot = normalized.slots.memory;
   let selectedMemoryPluginId: string | null = null;
   let memorySlotMatched = false;
@@ -297,6 +303,7 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
       configSchema: Boolean(manifestRecord.configSchema),
     });
     record.kind = manifestRecord.kind;
+    record.isolation = manifestRecord.isolation;
     record.configUiHints = manifestRecord.configUiHints;
     record.configJsonSchema = manifestRecord.configSchema;
 
@@ -419,6 +426,119 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
       continue;
     }
 
+    // Worker Thread isolation: load plugin in isolated Worker instead of in-process
+    if (manifestRecord.isolation === "worker") {
+      try {
+        const pluginSdkAlias = resolvePluginSdkAlias();
+        const pluginSdkAccountIdAlias = resolvePluginSdkAccountIdAlias();
+        const jitiAlias: Record<string, string> = {};
+        if (pluginSdkAlias) jitiAlias["openclaw/plugin-sdk"] = pluginSdkAlias;
+        if (pluginSdkAccountIdAlias) jitiAlias["openclaw/plugin-sdk/account-id"] = pluginSdkAccountIdAlias;
+
+        const workerHost = createWorkerHost({
+          pluginId: record.id,
+          pluginSource: candidate.source,
+          pluginConfig: validatedConfig.value,
+          metadata: {
+            id: record.id,
+            name: record.name,
+            version: record.version,
+            description: record.description,
+          },
+          jitiAlias,
+          logger: {
+            info: (msg: string) => logger.info(msg),
+            warn: (msg: string) => logger.warn(msg),
+            error: (msg: string) => logger.error(msg),
+            debug: (msg: string) => logger.debug?.(msg),
+          },
+          onRegisterTool: (descriptor) => {
+            record.toolNames.push(descriptor.name);
+            const proxyFactory: OpenClawPluginToolFactory = () =>
+              ({
+                name: descriptor.name,
+                description: descriptor.description ?? "",
+                parameters: descriptor.parameters ?? {},
+                async execute(_toolCallId: string, params: unknown) {
+                  const result = await workerHost.invokeTool(
+                    descriptor.name,
+                    (params ?? {}) as Record<string, unknown>,
+                  );
+                  return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+                },
+              }) as AnyAgentTool;
+            registry.tools.push({
+              pluginId: record.id,
+              factory: proxyFactory,
+              names: [descriptor.name],
+              optional: false,
+              source: record.source,
+            });
+          },
+          onRegisterHook: (hookName, handlerId, priority) => {
+            record.hookCount += 1;
+            registry.typedHooks.push({
+              pluginId: record.id,
+              hookName,
+              handler: async (event: unknown) => {
+                return workerHost.invokeHook(hookName, handlerId, event);
+              },
+              priority,
+              source: record.source,
+            } as TypedPluginHookRegistration);
+          },
+          onRegisterService: (serviceId) => {
+            record.services.push(serviceId);
+            registry.services.push({
+              pluginId: record.id,
+              service: {
+                id: serviceId,
+                start: async () => workerHost.invokeServiceStart(serviceId),
+                stop: async () => workerHost.invokeServiceStop(serviceId),
+              },
+              source: record.source,
+            });
+          },
+          onRegisterCommand: (name, description) => {
+            record.commands.push(name);
+            registry.commands.push({
+              pluginId: record.id,
+              command: {
+                name,
+                description: description ?? "",
+                handler: async (ctx) => {
+                  const args = ctx.args ? ctx.args.split(/\s+/).filter(Boolean) : [];
+                  const result = await workerHost.invokeCommand(name, args, {
+                    channelId: ctx.channelId,
+                    senderId: ctx.senderId,
+                  });
+                  return result as { text?: string };
+                },
+              },
+              source: record.source,
+            });
+          },
+        });
+
+        isolatedWorkers.push(workerHost);
+        registry.plugins.push(record);
+        seenIds.set(pluginId, candidate.origin);
+      } catch (err) {
+        logger.error(`[plugins] ${record.id} failed to create worker: ${String(err)}`);
+        record.status = "error";
+        record.error = String(err);
+        registry.plugins.push(record);
+        seenIds.set(pluginId, candidate.origin);
+        registry.diagnostics.push({
+          level: "error",
+          pluginId: record.id,
+          source: record.source,
+          message: `failed to create worker: ${String(err)}`,
+        });
+      }
+      continue;
+    }
+
     if (typeof register !== "function") {
       logger.error(`[plugins] ${record.id} missing register/activate export`);
       record.status = "error";
@@ -482,10 +602,42 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
     });
   }
 
+  // Track isolated workers for finalization
+  activeWorkers.push(...isolatedWorkers);
+
   if (cacheEnabled) {
     registryCache.set(cacheKey, registry);
   }
   setActivePluginRegistry(registry, cacheKey);
   initializeGlobalHookRunner(registry);
   return registry;
+}
+
+/**
+ * Finalize isolated plugins — wait for all Worker registrations to complete.
+ * Call after loadOpenClawPlugins() to ensure worker-based plugins are ready.
+ */
+export async function finalizeIsolatedPlugins(registry: PluginRegistry): Promise<void> {
+  const workers = activeWorkers.filter((w) =>
+    registry.plugins.some((p) => p.id === w.pluginId && p.status === "loaded"),
+  );
+  const results = await Promise.allSettled(workers.map((w) => w.ready));
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    if (result && result.status === "rejected") {
+      const worker = workers[i];
+      if (worker) {
+        const plugin = registry.plugins.find((p) => p.id === worker.pluginId);
+        if (plugin) {
+          plugin.status = "error";
+          plugin.error = String(result.reason);
+        }
+        registry.diagnostics.push({
+          level: "error",
+          pluginId: worker.pluginId,
+          message: `isolated plugin failed: ${String(result.reason)}`,
+        });
+      }
+    }
+  }
 }

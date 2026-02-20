@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { resolveStateDir } from "../config/paths.js";
+import { openJson, sealJson } from "../security/credential-envelope.js";
 
 export type DeviceIdentity = {
   deviceId: string;
@@ -68,7 +69,7 @@ export function loadOrCreateDeviceIdentity(
   try {
     if (fs.existsSync(filePath)) {
       const raw = fs.readFileSync(filePath, "utf8");
-      const parsed = JSON.parse(raw) as StoredIdentity;
+      const parsed = openJson(JSON.parse(raw)) as StoredIdentity;
       if (
         parsed?.version === 1 &&
         typeof parsed.deviceId === "string" &&
@@ -81,7 +82,8 @@ export function loadOrCreateDeviceIdentity(
             ...parsed,
             deviceId: derivedId,
           };
-          fs.writeFileSync(filePath, `${JSON.stringify(updated, null, 2)}\n`, { mode: 0o600 });
+          const sealed = sealJson(updated);
+          fs.writeFileSync(filePath, `${JSON.stringify(sealed, null, 2)}\n`, { mode: 0o600 });
           try {
             fs.chmodSync(filePath, 0o600);
           } catch {
@@ -113,7 +115,8 @@ export function loadOrCreateDeviceIdentity(
     privateKeyPem: identity.privateKeyPem,
     createdAtMs: Date.now(),
   };
-  fs.writeFileSync(filePath, `${JSON.stringify(stored, null, 2)}\n`, { mode: 0o600 });
+  const sealed = sealJson(stored);
+  fs.writeFileSync(filePath, `${JSON.stringify(sealed, null, 2)}\n`, { mode: 0o600 });
   try {
     fs.chmodSync(filePath, 0o600);
   } catch {
