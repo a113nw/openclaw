@@ -72,6 +72,40 @@ OpenClaw's web interface (Gateway Control UI + HTTP endpoints) is intended for *
 - If you need remote access, prefer an SSH tunnel or Tailscale serve/funnel (so the Gateway still binds to loopback), plus strong Gateway auth.
 - The Gateway HTTP surface includes the canvas host (`/__openclaw__/canvas/`, `/__openclaw__/a2ui/`). Treat canvas content as sensitive/untrusted and avoid exposing it beyond loopback unless you understand the risk.
 
+### Tailscale Trust Model
+
+**Trust boundary:** The local Tailscale daemon running on the same machine as the gateway.
+
+**How it works:**
+- Tailscale Serve receives HTTPS requests from the tailnet and forwards to the loopback-bound gateway
+- The gateway sees requests from `127.0.0.1`/`::1` with `x-forwarded-*` and `tailscale-user-*` headers
+- Identity is verified by calling `tailscale whois --json <client-ip>` and comparing the result to the header claim
+
+**Validation layers (defense in depth):**
+
+| Layer | Check | Code Location |
+|-------|-------|---------------|
+| Transport | Request must arrive from loopback address | `auth.ts:88-109` |
+| Proxy detection | All three `x-forwarded-*` headers must be present | `auth.ts:129-138` |
+| Identity claim | `tailscale-user-login` header must be present | `auth.ts:111-127` |
+| Whois verification | `tailscale whois` result must match header login (case-insensitive) | `auth.ts:147-178` |
+| DNS rebinding | Host header must be localhost, loopback IP, or `*.ts.net` | `host-validation.ts:25-50` |
+
+**Assumptions:**
+1. The local Tailscale daemon is trusted — it is the only process that can legitimately send requests to the loopback-bound gateway with Tailscale proxy headers
+2. `tailscale whois` returns authoritative identity — it queries the local daemon's authenticated state
+3. No other local process injects forged `x-forwarded-*` + `tailscale-user-*` headers to the gateway (mitigated by loopback binding + whois cross-check)
+
+**Known limitations:**
+- If the local Tailscale daemon is compromised, header forgery is possible — same trust level as any local privileged process (SSH agent, VPN client)
+- Whois results are cached for 60 seconds; identity changes (e.g., user deauthorized from tailnet) take up to 60s to propagate
+- If the Tailscale daemon is unavailable, all Tailscale-authenticated requests are rejected (fail-closed)
+
+**Recommendations for operators:**
+- Keep the gateway loopback-bound (`gateway.bind="loopback"`, the default)
+- Use Tailscale Serve for remote access rather than binding to LAN
+- For higher-trust requirements, consider Trusted-proxy mode with an external identity provider instead
+
 ## Runtime Requirements
 
 ### Node.js Version
@@ -306,9 +340,6 @@ These findings were assessed but deferred from this scaffolding due to architect
 
 | Finding | Severity | Why Deferred |
 |---------|----------|-------------|
-| CRIT-02 (plaintext credential storage) | Critical | Requires migration path for all stored tokens; design behind feature flag |
-| CRIT-03 Stage B (Worker Thread isolation) | Critical | Large architectural change; Stage A capability declarations provide interim protection |
-| CRIT-04 (Tailscale header trust) | Critical | Already validates via whois lookup; localhost-only risk |
 | HIGH-03 (exec allowlist arg bypass) | High | Complex argument pattern matching; document limitation |
 | HIGH-04 (`$include` path traversal) | High | Already fixed upstream (`isPathInside` with symlink resolution) |
 | MED-04 (plugin code signing) | Medium | Requires PKI infrastructure |
@@ -318,15 +349,20 @@ These findings were assessed but deferred from this scaffolding due to architect
 | LOW-01 (device key encryption at rest) | Low | Requires passphrase/keychain integration |
 | LOW-02 (WebSocket payload limits) | Low | Existing limits are reasonable; tighten if needed |
 
+*Previously deferred, now addressed:*
+- **CRIT-02** (plaintext credential storage) — Implemented: AES-256-GCM encryption with keychain/file master key
+- **CRIT-03 Stage B** (Worker Thread isolation) — Implemented: Worker Thread IPC bridge (Stage B-1)
+- **CRIT-04** (Tailscale header trust) — Addressed: Trust model documented in "Tailscale Trust Model" section above
+
 ### Test Coverage
 
-The security modules have comprehensive test coverage:
+The security modules have comprehensive test coverage (~443 tests total):
 
-**Unit tests** (`src/security/*.test.ts`): 95 tests across 9 files
-- One test file per security module
+**Unit tests** (`src/security/*.test.ts`): ~135 tests across 13 files
+- One test file per security module (including CRIT-02 and CRIT-03b additions)
 - Covers edge cases, error handling, and boundary conditions
 
-**Integration tests** (`src/security/__integration__/*.test.ts`): 89 tests across 9 files
+**Integration tests** (`src/security/__integration__/*.test.ts`): ~99 tests across 11 files
 - Auth flow composition (secret-equal + audit-log + rate-limiter)
 - DNS rebinding protection (host-validation + origin-check)
 - Environment filtering (env-allowlist in host exec context)
