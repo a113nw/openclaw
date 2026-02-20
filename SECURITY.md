@@ -292,7 +292,10 @@ Plugins can declare required capabilities in their definition export. When prese
 
 | Capability | Gated Methods |
 |-----------|---------------|
-| `network` | `registerHttpHandler`, `registerHttpRoute` |
+| `network` | `registerHttpHandler`, `registerHttpRoute`, `registerGatewayMethod` |
+| `messaging` | `registerChannel` |
+| `provider` | `registerProvider` |
+| `cli` | `registerCli` |
 | `filesystem` | *(future expansion)* |
 | `child_process` | *(future expansion)* |
 | `env_access` | *(future expansion)* |
@@ -300,7 +303,27 @@ Plugins can declare required capabilities in their definition export. When prese
 
 Plugins without a `capabilities` declaration get unrestricted access (backward compatible).
 
-**Consumer**: `plugins/loader.ts` (line 441, plugin API creation)
+**Consumer**: `plugins/loader.ts` (plugin API creation)
+
+#### Plugin Security Policies (`plugin-security-policy.ts`)
+
+**Addresses**: CRIT-03 Stage C (user-consent layer for plugin trust)
+
+A user-consent system that gates plugin access at load time. Three trust levels:
+
+| Trust Level | Behavior |
+|-------------|----------|
+| `trusted` | Full access, current default behavior |
+| `restricted` | Worker isolation + default-deny capability enforcement |
+| `disabled` | Plugin not loaded |
+
+**Components:**
+- **Policy store** (`plugin-security-policy.ts`): Per-plugin JSON files in `~/.openclaw/security/plugin-policies/` (dir 0o700, files 0o600). CRUD operations with path traversal rejection.
+- **Brain tool** (`agents/tools/plugin-security-tool.ts`): `plugin_security` tool with list/get/set actions. The brain uses this to record user decisions.
+- **Advisory hook** (`plugin-security-advisory.ts`): `before_prompt_build` hook that advises the brain when unconfigured plugins are detected. Fires once per session.
+- **Loader enforcement** (`plugins/loader.ts`): Applies stored policies at plugin load time — disabled plugins are skipped, restricted plugins are forced into worker isolation with default-deny capabilities.
+
+Plugins without a stored policy continue to load normally (backward compatible). The advisory hook prompts the brain to ask the user for configuration.
 
 ### Other Patches
 
@@ -408,6 +431,7 @@ These findings were assessed but deferred from this scaffolding due to architect
 *Previously deferred, now addressed:*
 - **CRIT-02** (plaintext credential storage) — Implemented: AES-256-GCM encryption with keychain/file master key
 - **CRIT-03 Stage B** (Worker Thread isolation) — Implemented: Worker Thread IPC bridge (Stage B-1)
+- **CRIT-03 Stage C** (plugin security consent) — Implemented: Trust-level policy store, brain advisory tool, loader enforcement
 - **CRIT-04** (Tailscale header trust) — Addressed: Trust model documented in "Tailscale Trust Model" section above
 - **HIGH-03** (exec allowlist argument bypass) — Addressed: Interpreter detection, runtime warnings, and audit findings
 - **MED-04** (plugin code signing) — Implemented: Ed25519 signing/verification, trust store, install-time and audit-time verification

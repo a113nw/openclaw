@@ -13,7 +13,10 @@ export type PluginCapability =
   | "network"
   | "child_process"
   | "env_access"
-  | "config_write";
+  | "config_write"
+  | "messaging"
+  | "provider"
+  | "cli";
 
 export const ALL_CAPABILITIES: readonly PluginCapability[] = [
   "filesystem",
@@ -21,6 +24,9 @@ export const ALL_CAPABILITIES: readonly PluginCapability[] = [
   "child_process",
   "env_access",
   "config_write",
+  "messaging",
+  "provider",
+  "cli",
 ] as const;
 
 /**
@@ -41,10 +47,13 @@ export function validatePluginCapabilities(
  */
 const CAPABILITY_METHODS: Record<PluginCapability, readonly string[]> = {
   filesystem: [],
-  network: ["registerHttpHandler", "registerHttpRoute"],
+  network: ["registerHttpHandler", "registerHttpRoute", "registerGatewayMethod"],
   child_process: [],
   env_access: [],
   config_write: [],
+  messaging: ["registerChannel"],
+  provider: ["registerProvider"],
+  cli: ["registerCli"],
 };
 
 /**
