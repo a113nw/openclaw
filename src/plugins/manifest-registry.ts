@@ -51,6 +51,8 @@ export type PluginManifestRecord = {
   schemaCacheKey?: string;
   configSchema?: Record<string, unknown>;
   configUiHints?: Record<string, PluginConfigUiHint>;
+  signed?: boolean;
+  signatureKeyId?: string;
 };
 
 export type PluginManifestRegistry = {
@@ -143,6 +145,8 @@ function buildRecord(params: {
     schemaCacheKey: params.schemaCacheKey,
     configSchema: params.configSchema,
     configUiHints: params.manifest.uiHints,
+    signed: params.manifest.signature ? true : undefined,
+    signatureKeyId: params.manifest.signature?.keyId,
   };
 }
 

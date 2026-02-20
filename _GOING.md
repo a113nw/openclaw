@@ -90,10 +90,13 @@
   - `isAllowedHostHeader()` in `host-validation.ts` validates Host header against known-safe list
   - Rejects public domain Host headers when origin is loopback
 
-- [ ] **MED-04** — Plugin code signing
-  - No verification that installed plugins come from a trusted source
-  - **Requires**: PKI infrastructure, signature format, verification tooling
-  - **Approach**: Add `signature` field to plugin manifest. Build signing CLI (`openclaw plugin sign`). Verify signatures at install and load time. Support a trust-on-first-use model for unsigned plugins.
+- [x] **MED-04** — Plugin code signing
+  - Ed25519 signing/verification in `plugin-signer.ts` (reuses device-identity.ts patterns)
+  - Trust store in `plugin-trust-store.ts` (CRUD for trusted public keys)
+  - `signature` field added to `PluginManifest` type and parser
+  - Install-time verification: invalid signatures block install (unless `--force`)
+  - `signed`/`signatureKeyId` propagated through manifest-registry → registry → loader
+  - Audit findings: unsigned → info, untrusted key → warn, invalid signature → critical
 
 - [ ] **MED-05** — Session data transmitted unencrypted
   - WebSocket messages between gateway and clients are not encrypted at the application layer
@@ -140,13 +143,13 @@
 |----------|-------|-------|----------|
 | Critical | 4 | 4 | 0 |
 | High | 8 | 8 | 0 |
-| Medium | 7 | 3 | 4 |
+| Medium | 7 | 4 | 3 |
 | Low | 4 | 2 | 2 |
-| **Total** | **23** | **17** | **6** |
+| **Total** | **23** | **18** | **5** |
 
-*Note: HIGH-04 was already fixed upstream, counted as fixed but required no action from us. CRIT-03a and CRIT-03b are counted as one finding (CRIT-03) with two stages — both complete, so +1 to the fixed count. CRIT-04 addressed via documentation (trust model in SECURITY.md). HIGH-03 addressed via interpreter detection, runtime warnings, and documentation.*
+*Note: HIGH-04 was already fixed upstream, counted as fixed but required no action from us. CRIT-03a and CRIT-03b are counted as one finding (CRIT-03) with two stages — both complete, so +1 to the fixed count. CRIT-04 addressed via documentation (trust model in SECURITY.md). HIGH-03 addressed via interpreter detection, runtime warnings, and documentation. MED-04 addressed via Ed25519 plugin signing, trust store, and install-time verification.*
 
-Effective completion: **18 implementations** across **17 distinct findings** (CRIT-03 has two stages).
+Effective completion: **19 implementations** across **18 distinct findings** (CRIT-03 has two stages).
 
 ---
 
@@ -174,12 +177,11 @@ These were explicitly scoped out of the CRIT-02/CRIT-03b implementations:
 
 ### Tier 2 — Medium impact, moderate effort
 
-3. **MED-04: Plugin code signing**
-   - Natural follow-up to the plugin security pipeline (install blocking + capabilities)
-   - Completes the chain: sign → scan → block → restrict
+3. ~~**MED-04: Plugin code signing**~~ — Done
+   - Ed25519 signing/verification, trust store, install-time verification
 
-4. **HIGH-03: Exec allowlist argument hardening**
-   - Document the limitation now, design proper argument validation
+4. ~~**HIGH-03: Exec allowlist argument hardening**~~ — Done
+   - Interpreter detection, runtime warnings, audit findings, documentation
 
 5. ~~**CRIT-04: Document Tailscale trust model**~~ — Done
 

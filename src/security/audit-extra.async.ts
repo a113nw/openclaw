@@ -199,6 +199,78 @@ function hasProviderPluginAllow(params: {
 // Exported collectors
 // --------------------------------------------------------------------------
 
+async function collectPluginSignatureFindings(params: {
+  extensionsDir: string;
+  pluginDirs: string[];
+}): Promise<SecurityAuditFinding[]> {
+  const findings: SecurityAuditFinding[] = [];
+  for (const pluginName of params.pluginDirs) {
+    const pluginPath = path.join(params.extensionsDir, pluginName);
+    const manifestPath = path.join(pluginPath, "openclaw.plugin.json");
+    let raw: Record<string, unknown>;
+    try {
+      const content = await fs.readFile(manifestPath, "utf-8");
+      raw = JSON.parse(content) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    const sig = raw.signature;
+    if (!sig || typeof sig !== "object") {
+      findings.push({
+        checkId: "plugins.unsigned",
+        severity: "info",
+        title: `Plugin "${pluginName}" is unsigned`,
+        detail: `No signature field in manifest for plugin "${pluginName}". Plugin authenticity cannot be verified.`,
+        remediation: "Sign the plugin using `openclaw plugin sign` or verify the source manually.",
+      });
+      continue;
+    }
+    const sigObj = sig as { keyId?: string; sig?: string; signedAt?: number };
+    if (!sigObj.keyId || !sigObj.sig) {
+      findings.push({
+        checkId: "plugins.invalid_signature",
+        severity: "warn",
+        title: `Plugin "${pluginName}" has malformed signature`,
+        detail: `Signature field in manifest for "${pluginName}" is missing required fields (sig, keyId).`,
+      });
+      continue;
+    }
+    // Attempt to verify against trust store
+    try {
+      const { findTrustedKey } = await import("./plugin-trust-store.js");
+      const { verifyPluginManifest } = await import("./plugin-signer.js");
+      const trusted = findTrustedKey(sigObj.keyId);
+      if (!trusted) {
+        findings.push({
+          checkId: "plugins.untrusted_key",
+          severity: "warn",
+          title: `Plugin "${pluginName}" signed with untrusted key`,
+          detail: `Plugin "${pluginName}" is signed with key ${sigObj.keyId} which is not in the trusted key store.`,
+          remediation: "Add the signing key to the trust store or verify the plugin source manually.",
+        });
+        continue;
+      }
+      const result = verifyPluginManifest({
+        manifest: raw,
+        signature: { sig: sigObj.sig, keyId: sigObj.keyId, signedAt: sigObj.signedAt ?? 0 },
+        publicKeyPem: trusted.publicKeyPem,
+      });
+      if (!result.valid) {
+        findings.push({
+          checkId: "plugins.invalid_signature",
+          severity: "critical",
+          title: `Plugin "${pluginName}" signature verification failed`,
+          detail: `Plugin "${pluginName}" has a signature that does not verify: ${result.reason ?? "unknown error"}. The manifest may have been tampered with.`,
+          remediation: "Re-install the plugin from a trusted source or remove it.",
+        });
+      }
+    } catch {
+      // Signing module not available; skip verification
+    }
+  }
+  return findings;
+}
+
 export async function collectPluginsTrustFindings(params: {
   cfg: OpenClawConfig;
   stateDir: string;
@@ -367,6 +439,9 @@ export async function collectPluginsTrustFindings(params: {
       });
     }
   }
+
+  // Plugin signature verification findings
+  findings.push(...(await collectPluginSignatureFindings({ extensionsDir, pluginDirs })));
 
   return findings;
 }

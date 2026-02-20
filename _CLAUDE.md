@@ -64,7 +64,7 @@ pnpm format:fix         # Auto-fix formatting
 
 ## Security Modules (`src/security/`)
 
-Hardening modules addressing 18 of 23 audit findings. Full docs in `SECURITY.md`.
+Hardening modules addressing 19 of 23 audit findings. Full docs in `SECURITY.md`.
 
 | Module | Purpose | Consumer |
 |--------|---------|----------|
@@ -81,6 +81,8 @@ Hardening modules addressing 18 of 23 audit findings. Full docs in `SECURITY.md`
 | `credential-cipher.ts` | AES-256-GCM encrypt/decrypt | `credential-envelope.ts` |
 | `master-key.ts` | Master key management (keychain/file) | `credential-envelope.ts` |
 | `credential-envelope.ts` | Transparent seal/open for JSON credential files | `json-file.ts`, `device-identity.ts`, `device-auth-store.ts`, `pairing-store.ts` |
+| `plugin-signer.ts` | Ed25519 plugin manifest signing/verification | `plugins/install.ts`, `audit-extra.async.ts` |
+| `plugin-trust-store.ts` | Trusted plugin key CRUD + signing key management | `plugins/install.ts`, `audit-extra.async.ts` |
 
 ### Worker Thread Plugin Isolation (`src/security/worker-bridge/`)
 

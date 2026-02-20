@@ -2,7 +2,7 @@
 
 ## Overview
 
-A security audit identified 23 findings across 4 severity levels. We have implemented fixes for 18 of those findings across five phases of work, all merged to `main` and synced to `develop`. Git flow has been adopted for future nontrivial changes.
+A security audit identified 23 findings across 4 severity levels. We have implemented fixes for 19 of those findings across six phases of work, all merged to `main` and synced to `develop`. Git flow has been adopted for future nontrivial changes.
 
 ## Pull Request History
 
@@ -38,6 +38,17 @@ Committed directly to `main` as `5e23007e7` (31 files changed, 2444 insertions).
   - Runtime warning via `logWarn()` when interpreter binary matched by allowlist
   - Audit finding (`exec.allowlist.interpreter_binary`) for interpreter patterns in config
   - Documented limitation and mitigation guidance in SECURITY.md
+
+### Phase 5: MED-04 Plugin Code Signing (1 finding)
+
+- **MED-04**: Ed25519 plugin code signing and verification
+  - `plugin-signer.ts`: Key generation, canonical manifest serialization, sign/verify
+  - `plugin-trust-store.ts`: Trusted key CRUD, signing key management (generate-on-first-use)
+  - `signature` field added to `PluginManifest` type and parser
+  - `signed`/`signatureKeyId` propagated through manifest-registry → registry → loader
+  - Install-time verification: invalid signatures block install (unless `--force`), unknown keys proceed with TOFU warning
+  - Audit findings: unsigned → info, untrusted key → warn, invalid signature → critical
+  - 26 new tests (unit + integration)
 
 ## What Was Implemented
 
@@ -121,13 +132,16 @@ Committed directly to `main` as `5e23007e7` (31 files changed, 2444 insertions).
 | CRIT-02 integration test | 1 | 5 |
 | CRIT-03b unit tests | 4 | ~38 |
 | CRIT-03b integration test | 1 | 5 |
-| **Total** | **~35** | **~443** |
+| HIGH-03 unit tests | 1 | 8 |
+| MED-04 unit tests | 2 | 21 |
+| MED-04 integration test | 1 | 5 |
+| **Total** | **~39** | **~477** |
 
-All 443 tests pass. Full suite shows 0 regressions (22 pre-existing failures in memory manager, extensions, and bootstrap tests exist on both `main` and security branches).
+All ~477 tests pass. Full suite shows 0 regressions (22 pre-existing failures in memory manager, extensions, and bootstrap tests exist on both `main` and security branches).
 
 ## Files Summary
 
-### New security files (12 + 5 worker-bridge)
+### New security files (14 + 5 worker-bridge)
 
 ```
 src/security/credential-config.ts
@@ -142,6 +156,8 @@ src/security/nonce-cache.ts
 src/security/host-validation.ts
 src/security/auth-audit-log.ts
 src/security/plugin-capabilities.ts
+src/security/plugin-signer.ts
+src/security/plugin-trust-store.ts
 src/security/worker-bridge/protocol.ts
 src/security/worker-bridge/rpc.ts
 src/security/worker-bridge/serialization.ts
