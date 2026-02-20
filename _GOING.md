@@ -32,6 +32,14 @@
   - Patched: `manifest.ts`, `manifest-registry.ts`, `registry.ts`, `loader.ts`
   - **Deferred to B-2/B-3:** `api.runtime` RPC proxy, channel/provider/HTTP bridging, sync hooks, `resourceLimits`
 
+- [x] **CRIT-03c** — Plugin security consent system (Stage C)
+  - Policy store: `plugin-security-policy.ts` — per-plugin trust levels (trusted/restricted/disabled)
+  - Brain tool: `plugin-security-tool.ts` — list/get/set actions for managing plugin policies
+  - Advisory hook: `plugin-security-advisory.ts` — `before_prompt_build` hook advises brain of unconfigured plugins
+  - Loader enforcement: disabled plugins skipped, restricted plugins forced to worker + default-deny capabilities
+  - Capability expansion: `messaging`, `provider`, `cli` capabilities added to `plugin-capabilities.ts`
+  - Backward compatible — plugins without policies load normally
+
 - [x] **CRIT-04** — Tailscale header trust model
   - Trust model documented in SECURITY.md "Tailscale Trust Model" section
   - Covers: validation layers table, trust assumptions, known limitations, operator recommendations
@@ -147,9 +155,9 @@
 | Low | 4 | 2 | 2 |
 | **Total** | **23** | **18** | **5** |
 
-*Note: HIGH-04 was already fixed upstream, counted as fixed but required no action from us. CRIT-03a and CRIT-03b are counted as one finding (CRIT-03) with two stages — both complete, so +1 to the fixed count. CRIT-04 addressed via documentation (trust model in SECURITY.md). HIGH-03 addressed via interpreter detection, runtime warnings, and documentation. MED-04 addressed via Ed25519 plugin signing, trust store, and install-time verification.*
+*Note: HIGH-04 was already fixed upstream, counted as fixed but required no action from us. CRIT-03a, CRIT-03b, and CRIT-03c are counted as one finding (CRIT-03) with three stages — all complete, so +1 to the fixed count. CRIT-04 addressed via documentation (trust model in SECURITY.md). HIGH-03 addressed via interpreter detection, runtime warnings, and documentation. MED-04 addressed via Ed25519 plugin signing, trust store, and install-time verification.*
 
-Effective completion: **19 implementations** across **18 distinct findings** (CRIT-03 has two stages).
+Effective completion: **20 implementations** across **18 distinct findings** (CRIT-03 has three stages).
 
 ---
 

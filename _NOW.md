@@ -2,7 +2,7 @@
 
 ## Overview
 
-A security audit identified 23 findings across 4 severity levels. We have implemented fixes for 19 of those findings across six phases of work, all merged to `main` and synced to `develop`. Git flow has been adopted for future nontrivial changes.
+A security audit identified 23 findings across 4 severity levels. We have implemented fixes for 20 of those findings across seven phases of work, all merged to `main` and synced to `develop`. Git flow has been adopted for future nontrivial changes.
 
 ## Pull Request History
 
@@ -49,6 +49,16 @@ Committed directly to `main` as `5e23007e7` (31 files changed, 2444 insertions).
   - Install-time verification: invalid signatures block install (unless `--force`), unknown keys proceed with TOFU warning
   - Audit findings: unsigned → info, untrusted key → warn, invalid signature → critical
   - 26 new tests (unit + integration)
+
+### Phase 6: CRIT-03c Plugin Security Consent System (1 finding)
+
+- **CRIT-03c**: Plugin security consent — user-controlled trust levels for plugins
+  - `plugin-security-policy.ts`: Policy store (trusted/restricted/disabled) in `~/.openclaw/security/plugin-policies/`
+  - `plugin-security-tool.ts`: Brain tool for managing policies (list/get/set actions)
+  - `plugin-security-advisory.ts`: Advisory hook surfaces unconfigured plugins to the brain
+  - Loader enforcement: disabled plugins skipped, restricted plugins forced to worker + default-deny capabilities
+  - Capability expansion: `messaging`, `provider`, `cli` added to `plugin-capabilities.ts`
+  - 60 new tests (4 test files)
 
 ## What Was Implemented
 
@@ -135,13 +145,14 @@ Committed directly to `main` as `5e23007e7` (31 files changed, 2444 insertions).
 | HIGH-03 unit tests | 1 | 8 |
 | MED-04 unit tests | 2 | 21 |
 | MED-04 integration test | 1 | 5 |
-| **Total** | **~39** | **~477** |
+| CRIT-03c unit tests | 4 | 60 |
+| **Total** | **~43** | **~537** |
 
-All ~477 tests pass. Full suite shows 0 regressions (22 pre-existing failures in memory manager, extensions, and bootstrap tests exist on both `main` and security branches).
+All ~537 tests pass. Full suite shows 0 regressions (22 pre-existing failures in memory manager, extensions, and bootstrap tests exist on both `main` and security branches).
 
 ## Files Summary
 
-### New security files (14 + 5 worker-bridge)
+### New security files (16 + 5 worker-bridge)
 
 ```
 src/security/credential-config.ts
@@ -158,6 +169,8 @@ src/security/auth-audit-log.ts
 src/security/plugin-capabilities.ts
 src/security/plugin-signer.ts
 src/security/plugin-trust-store.ts
+src/security/plugin-security-policy.ts
+src/security/plugin-security-advisory.ts
 src/security/worker-bridge/protocol.ts
 src/security/worker-bridge/rpc.ts
 src/security/worker-bridge/serialization.ts

@@ -21,6 +21,8 @@ import {
   createRestrictedPluginApi,
   type PluginCapability,
 } from "../security/plugin-capabilities.js";
+import { loadPolicy } from "../security/plugin-security-policy.js";
+import { registerSecurityAdvisoryHook } from "../security/plugin-security-advisory.js";
 import { createWorkerHost, type WorkerHost } from "../security/worker-bridge/main-host.js";
 import { createPluginRegistry, type PluginRecord, type PluginRegistry } from "./registry.js";
 import { setActivePluginRegistry } from "./runtime.js";
@@ -323,6 +325,18 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
       continue;
     }
 
+    // Security policy enforcement
+    const securityPolicy = loadPolicy(pluginId);
+
+    if (securityPolicy?.trustLevel === "disabled") {
+      record.status = "disabled";
+      record.enabled = false;
+      record.error = "disabled by security policy";
+      registry.plugins.push(record);
+      seenIds.set(pluginId, candidate.origin);
+      continue;
+    }
+
     if (!manifestRecord.configSchema) {
       record.status = "error";
       record.error = "missing config schema";
@@ -435,7 +449,8 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
     }
 
     // Worker Thread isolation: load plugin in isolated Worker instead of in-process
-    if (manifestRecord.isolation === "worker") {
+    const forceWorkerIsolation = securityPolicy?.trustLevel === "restricted";
+    if (manifestRecord.isolation === "worker" || forceWorkerIsolation) {
       try {
         const pluginSdkAlias = resolvePluginSdkAlias();
         const pluginSdkAccountIdAlias = resolvePluginSdkAccountIdAlias();
@@ -567,11 +582,15 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
       pluginConfig: validatedConfig.value,
     });
     // If the plugin definition declares capabilities, enforce them.
+    // Restricted trust level: default-deny (only explicit policy capabilities allowed).
     const declaredCapabilities = (
       definition as { capabilities?: PluginCapability[] }
     )?.capabilities;
-    const api = declaredCapabilities
-      ? createRestrictedPluginApi(rawApi, declaredCapabilities)
+    const effectiveCapabilities = securityPolicy?.trustLevel === "restricted"
+      ? (securityPolicy.capabilities as PluginCapability[] | undefined) ?? []
+      : declaredCapabilities;
+    const api = effectiveCapabilities
+      ? createRestrictedPluginApi(rawApi, effectiveCapabilities)
       : rawApi;
 
     try {
@@ -618,6 +637,7 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
   }
   setActivePluginRegistry(registry, cacheKey);
   initializeGlobalHookRunner(registry);
+  registerSecurityAdvisoryHook(registry);
   return registry;
 }
 

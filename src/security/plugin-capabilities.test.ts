@@ -51,7 +51,10 @@ describe("createRestrictedPluginApi", () => {
     registerHook: () => "hook-registered",
     registerHttpHandler: () => "http-handler-registered",
     registerHttpRoute: () => "http-route-registered",
+    registerGatewayMethod: () => "gateway-method-registered",
     registerChannel: () => "channel-registered",
+    registerProvider: () => "provider-registered",
+    registerCli: () => "cli-registered",
   };
 
   it("returns the original api when all capabilities are declared", () => {
@@ -93,10 +96,57 @@ describe("createRestrictedPluginApi", () => {
 
   it("always allows methods not gated by capabilities", () => {
     const restricted = createRestrictedPluginApi(mockApi, []);
-    // registerTool, registerHook, registerChannel are never restricted
+    // registerTool and registerHook are never restricted
     expect((restricted.registerTool as () => string)()).toBe("tool-registered");
     expect((restricted.registerHook as () => string)()).toBe("hook-registered");
+  });
+
+  it("blocks registerGatewayMethod when network capability is missing", () => {
+    const restricted = createRestrictedPluginApi(mockApi, ["filesystem"]);
+    expect(() => (restricted.registerGatewayMethod as () => void)()).toThrow(
+      /registerGatewayMethod.*capability/,
+    );
+  });
+
+  it("allows registerGatewayMethod when network capability is declared", () => {
+    const restricted = createRestrictedPluginApi(mockApi, ["network"]);
+    expect((restricted.registerGatewayMethod as () => string)()).toBe("gateway-method-registered");
+  });
+
+  it("blocks registerChannel when messaging capability is missing", () => {
+    const restricted = createRestrictedPluginApi(mockApi, ["network"]);
+    expect(() => (restricted.registerChannel as () => void)()).toThrow(
+      /registerChannel.*capability/,
+    );
+  });
+
+  it("allows registerChannel when messaging capability is declared", () => {
+    const restricted = createRestrictedPluginApi(mockApi, ["messaging"]);
     expect((restricted.registerChannel as () => string)()).toBe("channel-registered");
+  });
+
+  it("blocks registerProvider when provider capability is missing", () => {
+    const restricted = createRestrictedPluginApi(mockApi, ["network"]);
+    expect(() => (restricted.registerProvider as () => void)()).toThrow(
+      /registerProvider.*capability/,
+    );
+  });
+
+  it("allows registerProvider when provider capability is declared", () => {
+    const restricted = createRestrictedPluginApi(mockApi, ["provider"]);
+    expect((restricted.registerProvider as () => string)()).toBe("provider-registered");
+  });
+
+  it("blocks registerCli when cli capability is missing", () => {
+    const restricted = createRestrictedPluginApi(mockApi, ["network"]);
+    expect(() => (restricted.registerCli as () => void)()).toThrow(
+      /registerCli.*capability/,
+    );
+  });
+
+  it("allows registerCli when cli capability is declared", () => {
+    const restricted = createRestrictedPluginApi(mockApi, ["cli"]);
+    expect((restricted.registerCli as () => string)()).toBe("cli-registered");
   });
 
   it("preserves non-function properties", () => {
@@ -115,8 +165,8 @@ describe("createRestrictedPluginApi", () => {
 });
 
 describe("ALL_CAPABILITIES", () => {
-  it("contains exactly 5 capabilities", () => {
-    expect(ALL_CAPABILITIES).toHaveLength(5);
+  it("contains exactly 8 capabilities", () => {
+    expect(ALL_CAPABILITIES).toHaveLength(8);
   });
 
   it("includes expected capability names", () => {
@@ -126,6 +176,9 @@ describe("ALL_CAPABILITIES", () => {
       "child_process",
       "env_access",
       "config_write",
+      "messaging",
+      "provider",
+      "cli",
     ];
     expect([...ALL_CAPABILITIES]).toEqual(expected);
   });

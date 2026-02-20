@@ -83,6 +83,8 @@ Hardening modules addressing 19 of 23 audit findings. Full docs in `SECURITY.md`
 | `credential-envelope.ts` | Transparent seal/open for JSON credential files | `json-file.ts`, `device-identity.ts`, `device-auth-store.ts`, `pairing-store.ts` |
 | `plugin-signer.ts` | Ed25519 plugin manifest signing/verification | `plugins/install.ts`, `audit-extra.async.ts` |
 | `plugin-trust-store.ts` | Trusted plugin key CRUD + signing key management | `plugins/install.ts`, `audit-extra.async.ts` |
+| `plugin-security-policy.ts` | Per-plugin trust-level policy store (trusted/restricted/disabled) | `plugins/loader.ts`, `agents/tools/plugin-security-tool.ts` |
+| `plugin-security-advisory.ts` | Advisory hook for unconfigured plugins | `plugins/loader.ts` |
 
 ### Worker Thread Plugin Isolation (`src/security/worker-bridge/`)
 
