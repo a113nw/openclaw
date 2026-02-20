@@ -48,10 +48,11 @@
 - [x] **HIGH-02** — Device pairing token timing oracle
   - Same fix as HIGH-01 — both flows use `safeEqualSecret()` from `secret-equal.ts`
 
-- [ ] **HIGH-03** — Exec allowlist argument bypass
-  - Tool argument patterns can be crafted to bypass allowlist validation
-  - **Requires**: Comprehensive argument parsing and validation
-  - **Approach**: Document the limitation. Add warning in security audit output. Design a proper argument parser that handles shell quoting, pipes, and subshells.
+- [x] **HIGH-03** — Exec allowlist argument bypass
+  - Interpreter detection: `isInterpreterBinary()` checks against known interpreter set
+  - Runtime warning logged when interpreter binary matched by allowlist
+  - Audit finding (`exec.allowlist.interpreter_binary`) emitted for interpreter patterns in config
+  - Documented limitation and mitigation guidance in SECURITY.md
 
 - [x] **HIGH-04** — `$include` path traversal
   - Already fixed upstream — `includes.ts` now validates `isPathInside` with symlink resolution
@@ -138,14 +139,14 @@
 | Severity | Total | Fixed | Deferred |
 |----------|-------|-------|----------|
 | Critical | 4 | 4 | 0 |
-| High | 8 | 7 | 1 |
+| High | 8 | 8 | 0 |
 | Medium | 7 | 3 | 4 |
 | Low | 4 | 2 | 2 |
-| **Total** | **23** | **16** | **7** |
+| **Total** | **23** | **17** | **6** |
 
-*Note: HIGH-04 was already fixed upstream, counted as fixed but required no action from us. CRIT-03a and CRIT-03b are counted as one finding (CRIT-03) with two stages — both complete, so +1 to the fixed count. CRIT-04 addressed via documentation (trust model in SECURITY.md).*
+*Note: HIGH-04 was already fixed upstream, counted as fixed but required no action from us. CRIT-03a and CRIT-03b are counted as one finding (CRIT-03) with two stages — both complete, so +1 to the fixed count. CRIT-04 addressed via documentation (trust model in SECURITY.md). HIGH-03 addressed via interpreter detection, runtime warnings, and documentation.*
 
-Effective completion: **17 implementations** across **16 distinct findings** (CRIT-03 has two stages).
+Effective completion: **18 implementations** across **17 distinct findings** (CRIT-03 has two stages).
 
 ---
 

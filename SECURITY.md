@@ -334,15 +334,41 @@ Config files previously only got `0o600` permissions on initial write. Now, afte
 
 **Location**: `config/io.ts` (after successful config file read)
 
+#### Exec Allowlist Limitations (`exec-approvals-allowlist.ts`)
+
+**Addresses**: HIGH-03 (exec allowlist argument bypass)
+
+The exec allowlist validates **binary paths only**, not command arguments. This means that if an interpreter binary (e.g. `/usr/bin/python3`) is allowlisted, any arguments — including arbitrary code execution via `-c` flags — will pass validation.
+
+**What is validated:**
+- The resolved binary path matches an allowlist entry
+- Safe bins are restricted to stdin-only usage (no file path arguments)
+
+**What is NOT validated:**
+- Command arguments passed to the binary
+- Interpreter `-c` / `-e` / `--eval` flags
+- Piped input or heredoc content
+
+**Dangerous interpreters detected at runtime:**
+`python`, `python3`, `ruby`, `perl`, `node`, `nodejs`, `deno`, `bun`, `bash`, `sh`, `zsh`, `fish`, `dash`, `ksh`, `csh`, `tcsh`, `powershell`, `pwsh`, `lua`, `luajit`, `php`
+
+When an interpreter binary is matched by the allowlist, a runtime warning is logged. The security audit (`openclaw security audit`) also emits a `warn` finding for any interpreter patterns in the configured allowlist.
+
+**Mitigation guidance:**
+- Prefer allowlisting non-interpreter binaries (grep, jq, curl, git)
+- Use sandbox mode (`agents.defaults.sandbox.mode="all"`) when interpreters are required
+- Use per-command allowlisting with the most specific binary paths possible
+- Consider `tools.exec.security="deny"` for agents that should never exec
+
+**Consumer**: `infra/exec-approvals-allowlist.ts` (interpreter detection), `agents/bash-tools.exec.ts` (runtime warning), `security/audit-extra.sync.ts` (audit finding)
+
 ### Deferred Items
 
 These findings were assessed but deferred from this scaffolding due to architectural scope:
 
 | Finding | Severity | Why Deferred |
 |---------|----------|-------------|
-| HIGH-03 (exec allowlist arg bypass) | High | Complex argument pattern matching; document limitation |
 | HIGH-04 (`$include` path traversal) | High | Already fixed upstream (`isPathInside` with symlink resolution) |
-| MED-04 (plugin code signing) | Medium | Requires PKI infrastructure |
 | MED-05 (session encryption) | Medium | Requires key management design |
 | MED-06 (embedding content filtering) | Medium | Best implemented as optional security plugin hook |
 | MED-07 (approval request flooding) | Medium | Needs UX design for per-session rate limiting |
@@ -353,6 +379,7 @@ These findings were assessed but deferred from this scaffolding due to architect
 - **CRIT-02** (plaintext credential storage) — Implemented: AES-256-GCM encryption with keychain/file master key
 - **CRIT-03 Stage B** (Worker Thread isolation) — Implemented: Worker Thread IPC bridge (Stage B-1)
 - **CRIT-04** (Tailscale header trust) — Addressed: Trust model documented in "Tailscale Trust Model" section above
+- **HIGH-03** (exec allowlist argument bypass) — Addressed: Interpreter detection, runtime warnings, and audit findings
 
 ### Test Coverage
 

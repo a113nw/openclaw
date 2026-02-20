@@ -64,7 +64,7 @@ pnpm format:fix         # Auto-fix formatting
 
 ## Security Modules (`src/security/`)
 
-Hardening modules addressing 17 of 23 audit findings. Full docs in `SECURITY.md`.
+Hardening modules addressing 18 of 23 audit findings. Full docs in `SECURITY.md`.
 
 | Module | Purpose | Consumer |
 |--------|---------|----------|

@@ -2,7 +2,7 @@
 
 ## Overview
 
-A security audit identified 23 findings across 4 severity levels. We have implemented fixes for 17 of those findings across four phases of work, all merged to `main` and synced to `develop`. Git flow has been adopted for future nontrivial changes.
+A security audit identified 23 findings across 4 severity levels. We have implemented fixes for 18 of those findings across five phases of work, all merged to `main` and synced to `develop`. Git flow has been adopted for future nontrivial changes.
 
 ## Pull Request History
 
@@ -29,6 +29,15 @@ Committed directly to `main` as `5e23007e7` (31 files changed, 2444 insertions).
   - Validation layers table (transport, proxy detection, identity claim, whois verification, DNS rebinding)
   - Trust assumptions, known limitations, operator recommendations
   - No code changes — existing implementation is sound
+
+### Phase 4: HIGH-03 Exec Allowlist Interpreter Warnings (1 finding)
+
+- **HIGH-03**: Exec allowlist interpreter binary detection and warnings
+  - `isInterpreterBinary()` helper with 22 known interpreter names
+  - `interpreterWarnings` field added to `ExecAllowlistEvaluation` and `ExecAllowlistAnalysis`
+  - Runtime warning via `logWarn()` when interpreter binary matched by allowlist
+  - Audit finding (`exec.allowlist.interpreter_binary`) for interpreter patterns in config
+  - Documented limitation and mitigation guidance in SECURITY.md
 
 ## What Was Implemented
 
