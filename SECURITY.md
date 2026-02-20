@@ -362,6 +362,36 @@ When an interpreter binary is matched by the allowlist, a runtime warning is log
 
 **Consumer**: `infra/exec-approvals-allowlist.ts` (interpreter detection), `agents/bash-tools.exec.ts` (runtime warning), `security/audit-extra.sync.ts` (audit finding)
 
+#### Plugin Code Signing (`plugin-signer.ts`, `plugin-trust-store.ts`)
+
+**Addresses**: MED-04 (no verification that installed plugins come from a trusted source)
+
+Ed25519-based plugin manifest signing and verification infrastructure.
+
+**Signing format:**
+- Algorithm: Ed25519 (same as device-identity.ts)
+- Key ID: SHA-256 fingerprint of the raw public key bytes
+- Canonical form: JSON with `signature` field removed, keys sorted alphabetically
+- Signature stored in manifest as `{ sig, keyId, signedAt }` base64
+
+**Trust model:**
+- **Trust-on-first-use (TOFU)**: Unsigned plugins proceed with info-level log; signed plugins with unknown keys proceed with warning
+- **Trusted keys**: Stored in `~/.openclaw/security/trusted-plugin-keys/` (dir: `0o700`, files: `0o600`)
+- **Signing key**: Generated on first use, stored in `~/.openclaw/security/plugin-signing-key.json`
+
+**Verification points:**
+1. **Install-time** (`plugins/install.ts`): After security scan, before copy. Invalid signatures block install unless `--force`.
+2. **Load-time** (`plugins/manifest-registry.ts`): `signed` and `signatureKeyId` tracked on plugin records.
+3. **Audit** (`security/audit-extra.async.ts`): Unsigned plugins → `info`, untrusted key → `warn`, invalid signature → `critical`.
+
+**Key management:**
+- `generateSigningKey()` → Ed25519 keypair with SHA-256 key ID
+- `loadOrCreateSigningKey()` → Generate on first use, persist to disk
+- `addTrustedKey()` / `removeTrustedKey()` → CRUD for trusted public keys
+- `findTrustedKey(keyId)` → Look up by SHA-256 fingerprint
+
+**Consumer**: `security/plugin-signer.ts` (core crypto), `security/plugin-trust-store.ts` (key management), `plugins/install.ts` (install-time gate), `plugins/manifest.ts` + `manifest-registry.ts` + `registry.ts` + `loader.ts` (signature field propagation)
+
 ### Deferred Items
 
 These findings were assessed but deferred from this scaffolding due to architectural scope:
@@ -380,6 +410,7 @@ These findings were assessed but deferred from this scaffolding due to architect
 - **CRIT-03 Stage B** (Worker Thread isolation) — Implemented: Worker Thread IPC bridge (Stage B-1)
 - **CRIT-04** (Tailscale header trust) — Addressed: Trust model documented in "Tailscale Trust Model" section above
 - **HIGH-03** (exec allowlist argument bypass) — Addressed: Interpreter detection, runtime warnings, and audit findings
+- **MED-04** (plugin code signing) — Implemented: Ed25519 signing/verification, trust store, install-time and audit-time verification
 
 ### Test Coverage
 

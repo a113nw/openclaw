@@ -21,6 +21,7 @@ import {
 } from "../infra/install-source-utils.js";
 import { validateRegistryNpmSpec } from "../infra/npm-registry-spec.js";
 import { shouldBlockPluginInstall } from "../security/plugin-install-policy.js";
+import { loadPluginManifest } from "./manifest.js";
 import { extensionUsesSkippedScannerPath, isPathInside } from "../security/scan-paths.js";
 import * as skillScanner from "../security/skill-scanner.js";
 import { CONFIG_DIR, resolveUserPath } from "../utils.js";
@@ -223,6 +224,47 @@ async function installPluginFromPackageDir(params: {
     logger.warn?.(
       `Plugin "${pluginId}" code safety scan failed (${String(err)}). Installation continues; run "openclaw security audit --deep" after install.`,
     );
+  }
+
+  // Signature verification (install-time)
+  try {
+    const manifestRes = loadPluginManifest(params.packageDir);
+    if (manifestRes.ok && manifestRes.manifest.signature) {
+      const sig = manifestRes.manifest.signature;
+      try {
+        const { findTrustedKey } = await import("../security/plugin-trust-store.js");
+        const { verifyPluginManifest } = await import("../security/plugin-signer.js");
+        const trusted = findTrustedKey(sig.keyId);
+        if (trusted) {
+          const result = verifyPluginManifest({
+            manifest: manifestRes.manifest as unknown as Record<string, unknown>,
+            signature: sig,
+            publicKeyPem: trusted.publicKeyPem,
+          });
+          if (!result.valid) {
+            if (!params.force) {
+              return {
+                ok: false,
+                error: `plugin signature verification failed: ${result.reason ?? "invalid signature"}`,
+              };
+            }
+            logger.warn?.(
+              `WARNING: Plugin "${pluginId}" signature verification failed (--force used): ${result.reason}`,
+            );
+          }
+        } else {
+          logger.warn?.(
+            `Plugin "${pluginId}" is signed with unknown key ${sig.keyId}; proceeding (trust-on-first-use).`,
+          );
+        }
+      } catch {
+        logger.warn?.(
+          `Plugin "${pluginId}" signature verification skipped (signing module unavailable).`,
+        );
+      }
+    }
+  } catch {
+    // Manifest loading for signature check is best-effort
   }
 
   const extensionsDir = params.extensionsDir
