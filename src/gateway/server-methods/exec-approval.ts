@@ -3,6 +3,10 @@ import {
   DEFAULT_EXEC_APPROVAL_TIMEOUT_MS,
   type ExecApprovalDecision,
 } from "../../infra/exec-approvals.js";
+import type {
+  ApprovalRateLimiter,
+} from "../../security/approval-rate-limiter.js";
+import { createApprovalRateLimiter } from "../../security/approval-rate-limiter.js";
 import type { ExecApprovalManager } from "../exec-approval-manager.js";
 import {
   ErrorCodes,
@@ -15,8 +19,10 @@ import type { GatewayRequestHandlers } from "./types.js";
 
 export function createExecApprovalHandlers(
   manager: ExecApprovalManager,
-  opts?: { forwarder?: ExecApprovalForwarder },
+  opts?: { forwarder?: ExecApprovalForwarder; rateLimiter?: ApprovalRateLimiter },
 ): GatewayRequestHandlers {
+  const rateLimiter = opts?.rateLimiter ?? createApprovalRateLimiter();
+
   return {
     "exec.approval.request": async ({ params, respond, context, client }) => {
       if (!validateExecApprovalRequestParams(params)) {
@@ -57,6 +63,26 @@ export function createExecApprovalHandlers(
         );
         return;
       }
+      // --- MED-07: Per-session approval rate limiting ---
+      const sessionKey = typeof p.sessionKey === "string" ? p.sessionKey : "unknown";
+      const rateLimitResult = rateLimiter.check(sessionKey);
+      if (!rateLimitResult.allowed) {
+        context.logGateway?.warn?.(
+          `exec approvals: rate limited session=${sessionKey} retryAfterMs=${rateLimitResult.retryAfterMs}`,
+        );
+        respond(
+          true,
+          {
+            id: explicitId ?? null,
+            decision: null,
+            rateLimited: true,
+          },
+          undefined,
+        );
+        return;
+      }
+      rateLimiter.record(sessionKey);
+      // --- end MED-07 ---
       const request = {
         command: p.command,
         cwd: p.cwd ?? null,

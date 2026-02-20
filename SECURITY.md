@@ -344,6 +344,19 @@ A user-consent system that gates plugin access at load time. Three trust levels:
 
 Plugins without a stored policy continue to load normally (backward compatible). The advisory hook prompts the brain to ask the user for configuration.
 
+#### Approval Request Rate Limiting (`approval-rate-limiter.ts`)
+
+**Addresses**: MED-07 (approval request flooding)
+
+A per-session sliding-window rate limiter prevents runaway or malicious agents from flooding the user with rapid-fire exec approval prompts. When the rate limit is exceeded, the gateway auto-resolves the approval as `null` (timeout) without broadcasting to the user, letting the existing `askFallback` policy handle the security decision.
+
+- **Default limits**: 5 requests per 60-second window, 60-second cooldown after limit exceeded
+- **Integration point**: `exec.approval.request` handler in `exec-approval.ts`
+- **Session isolation**: Each `sessionKey` has independent counters
+- **Memory bounded**: Periodic prune every 60s removes expired entries
+
+**Consumer**: `gateway/server-methods/exec-approval.ts` (approval request handler)
+
 ### Other Patches
 
 #### Default Auth Rate Limiting (HIGH-06)
@@ -443,7 +456,7 @@ These findings were assessed but deferred from this scaffolding due to architect
 | HIGH-04 (`$include` path traversal) | High | Already fixed upstream (`isPathInside` with symlink resolution) |
 | MED-05 (session encryption) | Medium | Addressed: transport security guidance + runtime warning |
 | MED-06 (embedding content filtering) | Medium | Addressed: `before_memory_index` hook + default content filter |
-| MED-07 (approval request flooding) | Medium | Needs UX design for per-session rate limiting |
+| MED-07 (approval request flooding) | Medium | Addressed: per-session sliding-window rate limiter in gateway |
 | LOW-01 (device key encryption at rest) | Low | Requires passphrase/keychain integration |
 | LOW-02 (WebSocket payload limits) | Low | Existing limits are reasonable; tighten if needed |
 
@@ -456,6 +469,7 @@ These findings were assessed but deferred from this scaffolding due to architect
 - **MED-04** (plugin code signing) — Implemented: Ed25519 signing/verification, trust store, install-time and audit-time verification
 - **MED-05** (session encryption) — Addressed: transport security guidance + runtime warning in `server-startup-log.ts`
 - **MED-06** (embedding content filtering) — Addressed: `before_memory_index` plugin hook + default `filterSensitiveContent` filter in `embedding-content-filter.ts`
+- **MED-07** (approval request flooding) — Addressed: per-session sliding-window rate limiter in `approval-rate-limiter.ts`, integrated at gateway approval request handler
 
 ### Test Coverage
 
