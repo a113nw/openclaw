@@ -12,6 +12,7 @@ import { resolveUserPath } from "../utils.js";
 import { registerPluginCommand } from "./commands.js";
 import { normalizePluginHttpPath } from "./http-path.js";
 import type { PluginRuntime } from "./runtime/types.js";
+import type { PluginIsolation } from "./manifest.js";
 import type {
   OpenClawPluginApi,
   OpenClawPluginChannelRegistration,
@@ -100,6 +101,7 @@ export type PluginRecord = {
   version?: string;
   description?: string;
   kind?: PluginKind;
+  isolation?: PluginIsolation;
   source: string;
   origin: PluginOrigin;
   workspaceDir?: string;

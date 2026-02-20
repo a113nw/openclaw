@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { resolveStateDir } from "../config/paths.js";
+import { openJson, sealJson } from "../security/credential-envelope.js";
 import {
   type DeviceAuthEntry,
   type DeviceAuthStore,
@@ -20,7 +21,7 @@ function readStore(filePath: string): DeviceAuthStore | null {
       return null;
     }
     const raw = fs.readFileSync(filePath, "utf8");
-    const parsed = JSON.parse(raw) as DeviceAuthStore;
+    const parsed = openJson(JSON.parse(raw)) as DeviceAuthStore;
     if (parsed?.version !== 1 || typeof parsed.deviceId !== "string") {
       return null;
     }
@@ -35,7 +36,8 @@ function readStore(filePath: string): DeviceAuthStore | null {
 
 function writeStore(filePath: string, store: DeviceAuthStore): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, `${JSON.stringify(store, null, 2)}\n`, { mode: 0o600 });
+  const sealed = sealJson(store);
+  fs.writeFileSync(filePath, `${JSON.stringify(sealed, null, 2)}\n`, { mode: 0o600 });
   try {
     fs.chmodSync(filePath, 0o600);
   } catch {

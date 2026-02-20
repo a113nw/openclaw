@@ -222,13 +222,13 @@ function applyLegacyStore(store: AuthProfileStore, legacy: LegacyAuthStore): voi
 
 export function loadAuthProfileStore(): AuthProfileStore {
   const authPath = resolveAuthStorePath();
-  const raw = loadJsonFile(authPath);
+  const raw = loadJsonFile(authPath, { decrypt: true });
   const asStore = coerceAuthStore(raw);
   if (asStore) {
     // Sync from external CLI tools on every load
     const synced = syncExternalCliCredentials(asStore);
     if (synced) {
-      saveJsonFile(authPath, asStore);
+      saveJsonFile(authPath, asStore, { encrypt: true });
     }
     return asStore;
   }
@@ -255,13 +255,13 @@ function loadAuthProfileStoreForAgent(
   _options?: { allowKeychainPrompt?: boolean },
 ): AuthProfileStore {
   const authPath = resolveAuthStorePath(agentDir);
-  const raw = loadJsonFile(authPath);
+  const raw = loadJsonFile(authPath, { decrypt: true });
   const asStore = coerceAuthStore(raw);
   if (asStore) {
     // Sync from external CLI tools on every load
     const synced = syncExternalCliCredentials(asStore);
     if (synced) {
-      saveJsonFile(authPath, asStore);
+      saveJsonFile(authPath, asStore, { encrypt: true });
     }
     return asStore;
   }
@@ -273,7 +273,7 @@ function loadAuthProfileStoreForAgent(
     const mainStore = coerceAuthStore(mainRaw);
     if (mainStore && Object.keys(mainStore.profiles).length > 0) {
       // Clone main store to subagent directory for auth inheritance
-      saveJsonFile(authPath, mainStore);
+      saveJsonFile(authPath, mainStore, { encrypt: true });
       log.info("inherited auth-profiles from main agent", { agentDir });
       return mainStore;
     }
@@ -293,7 +293,7 @@ function loadAuthProfileStoreForAgent(
   const syncedCli = syncExternalCliCredentials(store);
   const shouldWrite = legacy !== null || mergedOAuth || syncedCli;
   if (shouldWrite) {
-    saveJsonFile(authPath, store);
+    saveJsonFile(authPath, store, { encrypt: true });
   }
 
   // PR #368: legacy auth.json could get re-migrated from other agent dirs,
@@ -342,5 +342,5 @@ export function saveAuthProfileStore(store: AuthProfileStore, agentDir?: string)
     lastGood: store.lastGood ?? undefined,
     usageStats: store.usageStats ?? undefined,
   } satisfies AuthProfileStore;
-  saveJsonFile(authPath, payload);
+  saveJsonFile(authPath, payload, { encrypt: true });
 }

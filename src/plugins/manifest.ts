@@ -7,10 +7,13 @@ import type { PluginConfigUiHint, PluginKind } from "./types.js";
 export const PLUGIN_MANIFEST_FILENAME = "openclaw.plugin.json";
 export const PLUGIN_MANIFEST_FILENAMES = [PLUGIN_MANIFEST_FILENAME] as const;
 
+export type PluginIsolation = "worker" | "none";
+
 export type PluginManifest = {
   id: string;
   configSchema: Record<string, unknown>;
   kind?: PluginKind;
+  isolation?: PluginIsolation;
   channels?: string[];
   providers?: string[];
   skills?: string[];
@@ -69,6 +72,8 @@ export function loadPluginManifest(rootDir: string): PluginManifestLoadResult {
   }
 
   const kind = typeof raw.kind === "string" ? (raw.kind as PluginKind) : undefined;
+  const isolation =
+    raw.isolation === "worker" ? "worker" : raw.isolation === "none" ? "none" : undefined;
   const name = typeof raw.name === "string" ? raw.name.trim() : undefined;
   const description = typeof raw.description === "string" ? raw.description.trim() : undefined;
   const version = typeof raw.version === "string" ? raw.version.trim() : undefined;
@@ -87,6 +92,7 @@ export function loadPluginManifest(rootDir: string): PluginManifestLoadResult {
       id,
       configSchema,
       kind,
+      isolation,
       channels,
       providers,
       skills,

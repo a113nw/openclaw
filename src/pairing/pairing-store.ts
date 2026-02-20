@@ -8,6 +8,7 @@ import { resolveOAuthDir, resolveStateDir } from "../config/paths.js";
 import { withFileLock as withPathLock } from "../infra/file-lock.js";
 import { resolveRequiredHomeDir } from "../infra/home-dir.js";
 import { readJsonFileWithFallback, writeJsonFileAtomically } from "../plugin-sdk/json-store.js";
+import { openJson, sealJson } from "../security/credential-envelope.js";
 
 const PAIRING_CODE_LENGTH = 8;
 const PAIRING_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -98,11 +99,15 @@ async function readJsonFile<T>(
   filePath: string,
   fallback: T,
 ): Promise<{ value: T; exists: boolean }> {
-  return await readJsonFileWithFallback(filePath, fallback);
+  const result = await readJsonFileWithFallback(filePath, fallback);
+  if (result.exists) {
+    return { value: openJson(result.value) as T, exists: true };
+  }
+  return result;
 }
 
 async function writeJsonFile(filePath: string, value: unknown): Promise<void> {
-  await writeJsonFileAtomically(filePath, value);
+  await writeJsonFileAtomically(filePath, sealJson(value));
 }
 
 async function readPairingRequests(filePath: string): Promise<PairingRequest[]> {
