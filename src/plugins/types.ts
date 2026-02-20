@@ -315,7 +315,8 @@ export type PluginHookName =
   | "session_start"
   | "session_end"
   | "gateway_start"
-  | "gateway_stop";
+  | "gateway_stop"
+  | "before_memory_index";
 
 // Agent context shared across agent hooks
 export type PluginHookAgentContext = {
@@ -562,6 +563,23 @@ export type PluginHookGatewayStopEvent = {
   reason?: string;
 };
 
+// Memory index context
+export type PluginHookMemoryIndexContext = {
+  path: string;
+};
+
+// before_memory_index hook
+export type PluginHookBeforeMemoryIndexEvent = {
+  path: string;
+  source: "memory" | "sessions";
+  content: string;
+};
+
+export type PluginHookBeforeMemoryIndexResult = {
+  content?: string;
+  skip?: boolean;
+};
+
 // Hook handler types mapped by hook name
 export type PluginHookHandlerMap = {
   before_model_resolve: (
@@ -641,6 +659,13 @@ export type PluginHookHandlerMap = {
     event: PluginHookGatewayStopEvent,
     ctx: PluginHookGatewayContext,
   ) => Promise<void> | void;
+  before_memory_index: (
+    event: PluginHookBeforeMemoryIndexEvent,
+    ctx: PluginHookMemoryIndexContext,
+  ) =>
+    | Promise<PluginHookBeforeMemoryIndexResult | void>
+    | PluginHookBeforeMemoryIndexResult
+    | void;
 };
 
 export type PluginHookRegistration<K extends PluginHookName = PluginHookName> = {

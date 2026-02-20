@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { runGeminiEmbeddingBatches, type GeminiBatchRequest } from "./batch-gemini.js";
 import {
@@ -703,7 +704,29 @@ export abstract class MemoryManagerEmbeddingOps extends MemoryManagerSyncOps {
       return;
     }
 
-    const content = options.content ?? (await fs.readFile(entry.absPath, "utf-8"));
+    let content = options.content ?? (await fs.readFile(entry.absPath, "utf-8"));
+
+    // Run before_memory_index hook to allow content filtering (e.g. redact secrets)
+    try {
+      const hookRunner = getGlobalHookRunner();
+      if (hookRunner?.hasHooks("before_memory_index")) {
+        const hookResult = await hookRunner.runBeforeMemoryIndex(
+          { path: entry.path, source: options.source as "memory" | "sessions", content },
+          { path: entry.path },
+        );
+        if (hookResult?.skip) {
+          log.debug("indexFile skipped by before_memory_index hook", { path: entry.path });
+          return;
+        }
+        if (hookResult?.content) {
+          content = hookResult.content;
+        }
+      }
+    } catch (err) {
+      // Hook failure must not block indexing
+      log.warn(`before_memory_index hook failed for ${entry.path}: ${String(err)}`);
+    }
+
     const chunks = enforceEmbeddingMaxInputTokens(
       this.provider,
       chunkMarkdown(content, this.settings.chunking).filter(

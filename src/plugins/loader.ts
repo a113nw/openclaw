@@ -23,6 +23,7 @@ import {
 } from "../security/plugin-capabilities.js";
 import { loadPolicy } from "../security/plugin-security-policy.js";
 import { registerSecurityAdvisoryHook } from "../security/plugin-security-advisory.js";
+import { registerEmbeddingContentFilter } from "../security/embedding-content-filter.js";
 import { createWorkerHost, type WorkerHost } from "../security/worker-bridge/main-host.js";
 import { createPluginRegistry, type PluginRecord, type PluginRegistry } from "./registry.js";
 import { setActivePluginRegistry } from "./runtime.js";
@@ -638,6 +639,7 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
   setActivePluginRegistry(registry, cacheKey);
   initializeGlobalHookRunner(registry);
   registerSecurityAdvisoryHook(registry);
+  registerEmbeddingContentFilter(registry);
   return registry;
 }
 

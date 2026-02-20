@@ -42,6 +42,9 @@ import type {
   PluginHookToolResultPersistResult,
   PluginHookBeforeMessageWriteEvent,
   PluginHookBeforeMessageWriteResult,
+  PluginHookMemoryIndexContext,
+  PluginHookBeforeMemoryIndexEvent,
+  PluginHookBeforeMemoryIndexResult,
 } from "./types.js";
 
 // Re-export types for consumers
@@ -79,6 +82,9 @@ export type {
   PluginHookGatewayContext,
   PluginHookGatewayStartEvent,
   PluginHookGatewayStopEvent,
+  PluginHookMemoryIndexContext,
+  PluginHookBeforeMemoryIndexEvent,
+  PluginHookBeforeMemoryIndexResult,
 };
 
 export type HookRunnerLogger = {
@@ -119,6 +125,14 @@ export function createHookRunner(registry: PluginRegistry, options: HookRunnerOp
     // Keep the first defined override so higher-priority hooks win.
     modelOverride: acc?.modelOverride ?? next.modelOverride,
     providerOverride: acc?.providerOverride ?? next.providerOverride,
+  });
+
+  const mergeBeforeMemoryIndex = (
+    acc: PluginHookBeforeMemoryIndexResult | undefined,
+    next: PluginHookBeforeMemoryIndexResult,
+  ): PluginHookBeforeMemoryIndexResult => ({
+    skip: acc?.skip || next.skip,
+    content: next.content ?? acc?.content,
   });
 
   const mergeBeforePromptBuild = (
@@ -545,6 +559,27 @@ export function createHookRunner(registry: PluginRegistry, options: HookRunnerOp
   }
 
   // =========================================================================
+  // Memory Hooks
+  // =========================================================================
+
+  /**
+   * Run before_memory_index hook.
+   * Allows plugins to filter or skip content before embedding.
+   * Runs sequentially (modifying hook).
+   */
+  async function runBeforeMemoryIndex(
+    event: PluginHookBeforeMemoryIndexEvent,
+    ctx: PluginHookMemoryIndexContext,
+  ): Promise<PluginHookBeforeMemoryIndexResult | undefined> {
+    return runModifyingHook<"before_memory_index", PluginHookBeforeMemoryIndexResult>(
+      "before_memory_index",
+      event,
+      ctx,
+      mergeBeforeMemoryIndex,
+    );
+  }
+
+  // =========================================================================
   // Session Hooks
   // =========================================================================
 
@@ -635,6 +670,8 @@ export function createHookRunner(registry: PluginRegistry, options: HookRunnerOp
     runToolResultPersist,
     // Message write hooks
     runBeforeMessageWrite,
+    // Memory hooks
+    runBeforeMemoryIndex,
     // Session hooks
     runSessionStart,
     runSessionEnd,
