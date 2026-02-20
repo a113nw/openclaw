@@ -72,6 +72,40 @@ OpenClaw's web interface (Gateway Control UI + HTTP endpoints) is intended for *
 - If you need remote access, prefer an SSH tunnel or Tailscale serve/funnel (so the Gateway still binds to loopback), plus strong Gateway auth.
 - The Gateway HTTP surface includes the canvas host (`/__openclaw__/canvas/`, `/__openclaw__/a2ui/`). Treat canvas content as sensitive/untrusted and avoid exposing it beyond loopback unless you understand the risk.
 
+### Tailscale Trust Model
+
+**Trust boundary:** The local Tailscale daemon running on the same machine as the gateway.
+
+**How it works:**
+- Tailscale Serve receives HTTPS requests from the tailnet and forwards to the loopback-bound gateway
+- The gateway sees requests from `127.0.0.1`/`::1` with `x-forwarded-*` and `tailscale-user-*` headers
+- Identity is verified by calling `tailscale whois --json <client-ip>` and comparing the result to the header claim
+
+**Validation layers (defense in depth):**
+
+| Layer | Check | Code Location |
+|-------|-------|---------------|
+| Transport | Request must arrive from loopback address | `auth.ts:88-109` |
+| Proxy detection | All three `x-forwarded-*` headers must be present | `auth.ts:129-138` |
+| Identity claim | `tailscale-user-login` header must be present | `auth.ts:111-127` |
+| Whois verification | `tailscale whois` result must match header login (case-insensitive) | `auth.ts:147-178` |
+| DNS rebinding | Host header must be localhost, loopback IP, or `*.ts.net` | `host-validation.ts:25-50` |
+
+**Assumptions:**
+1. The local Tailscale daemon is trusted — it is the only process that can legitimately send requests to the loopback-bound gateway with Tailscale proxy headers
+2. `tailscale whois` returns authoritative identity — it queries the local daemon's authenticated state
+3. No other local process injects forged `x-forwarded-*` + `tailscale-user-*` headers to the gateway (mitigated by loopback binding + whois cross-check)
+
+**Known limitations:**
+- If the local Tailscale daemon is compromised, header forgery is possible — same trust level as any local privileged process (SSH agent, VPN client)
+- Whois results are cached for 60 seconds; identity changes (e.g., user deauthorized from tailnet) take up to 60s to propagate
+- If the Tailscale daemon is unavailable, all Tailscale-authenticated requests are rejected (fail-closed)
+
+**Recommendations for operators:**
+- Keep the gateway loopback-bound (`gateway.bind="loopback"`, the default)
+- Use Tailscale Serve for remote access rather than binding to LAN
+- For higher-trust requirements, consider Trusted-proxy mode with an external identity provider instead
+
 ## Runtime Requirements
 
 ### Node.js Version
@@ -258,7 +292,10 @@ Plugins can declare required capabilities in their definition export. When prese
 
 | Capability | Gated Methods |
 |-----------|---------------|
-| `network` | `registerHttpHandler`, `registerHttpRoute` |
+| `network` | `registerHttpHandler`, `registerHttpRoute`, `registerGatewayMethod` |
+| `messaging` | `registerChannel` |
+| `provider` | `registerProvider` |
+| `cli` | `registerCli` |
 | `filesystem` | *(future expansion)* |
 | `child_process` | *(future expansion)* |
 | `env_access` | *(future expansion)* |
@@ -266,7 +303,27 @@ Plugins can declare required capabilities in their definition export. When prese
 
 Plugins without a `capabilities` declaration get unrestricted access (backward compatible).
 
-**Consumer**: `plugins/loader.ts` (line 441, plugin API creation)
+**Consumer**: `plugins/loader.ts` (plugin API creation)
+
+#### Plugin Security Policies (`plugin-security-policy.ts`)
+
+**Addresses**: CRIT-03 Stage C (user-consent layer for plugin trust)
+
+A user-consent system that gates plugin access at load time. Three trust levels:
+
+| Trust Level | Behavior |
+|-------------|----------|
+| `trusted` | Full access, current default behavior |
+| `restricted` | Worker isolation + default-deny capability enforcement |
+| `disabled` | Plugin not loaded |
+
+**Components:**
+- **Policy store** (`plugin-security-policy.ts`): Per-plugin JSON files in `~/.openclaw/security/plugin-policies/` (dir 0o700, files 0o600). CRUD operations with path traversal rejection.
+- **Brain tool** (`agents/tools/plugin-security-tool.ts`): `plugin_security` tool with list/get/set actions. The brain uses this to record user decisions.
+- **Advisory hook** (`plugin-security-advisory.ts`): `before_prompt_build` hook that advises the brain when unconfigured plugins are detected. Fires once per session.
+- **Loader enforcement** (`plugins/loader.ts`): Applies stored policies at plugin load time — disabled plugins are skipped, restricted plugins are forced into worker isolation with default-deny capabilities.
+
+Plugins without a stored policy continue to load normally (backward compatible). The advisory hook prompts the brain to ask the user for configuration.
 
 ### Other Patches
 
@@ -300,33 +357,94 @@ Config files previously only got `0o600` permissions on initial write. Now, afte
 
 **Location**: `config/io.ts` (after successful config file read)
 
+#### Exec Allowlist Limitations (`exec-approvals-allowlist.ts`)
+
+**Addresses**: HIGH-03 (exec allowlist argument bypass)
+
+The exec allowlist validates **binary paths only**, not command arguments. This means that if an interpreter binary (e.g. `/usr/bin/python3`) is allowlisted, any arguments — including arbitrary code execution via `-c` flags — will pass validation.
+
+**What is validated:**
+- The resolved binary path matches an allowlist entry
+- Safe bins are restricted to stdin-only usage (no file path arguments)
+
+**What is NOT validated:**
+- Command arguments passed to the binary
+- Interpreter `-c` / `-e` / `--eval` flags
+- Piped input or heredoc content
+
+**Dangerous interpreters detected at runtime:**
+`python`, `python3`, `ruby`, `perl`, `node`, `nodejs`, `deno`, `bun`, `bash`, `sh`, `zsh`, `fish`, `dash`, `ksh`, `csh`, `tcsh`, `powershell`, `pwsh`, `lua`, `luajit`, `php`
+
+When an interpreter binary is matched by the allowlist, a runtime warning is logged. The security audit (`openclaw security audit`) also emits a `warn` finding for any interpreter patterns in the configured allowlist.
+
+**Mitigation guidance:**
+- Prefer allowlisting non-interpreter binaries (grep, jq, curl, git)
+- Use sandbox mode (`agents.defaults.sandbox.mode="all"`) when interpreters are required
+- Use per-command allowlisting with the most specific binary paths possible
+- Consider `tools.exec.security="deny"` for agents that should never exec
+
+**Consumer**: `infra/exec-approvals-allowlist.ts` (interpreter detection), `agents/bash-tools.exec.ts` (runtime warning), `security/audit-extra.sync.ts` (audit finding)
+
+#### Plugin Code Signing (`plugin-signer.ts`, `plugin-trust-store.ts`)
+
+**Addresses**: MED-04 (no verification that installed plugins come from a trusted source)
+
+Ed25519-based plugin manifest signing and verification infrastructure.
+
+**Signing format:**
+- Algorithm: Ed25519 (same as device-identity.ts)
+- Key ID: SHA-256 fingerprint of the raw public key bytes
+- Canonical form: JSON with `signature` field removed, keys sorted alphabetically
+- Signature stored in manifest as `{ sig, keyId, signedAt }` base64
+
+**Trust model:**
+- **Trust-on-first-use (TOFU)**: Unsigned plugins proceed with info-level log; signed plugins with unknown keys proceed with warning
+- **Trusted keys**: Stored in `~/.openclaw/security/trusted-plugin-keys/` (dir: `0o700`, files: `0o600`)
+- **Signing key**: Generated on first use, stored in `~/.openclaw/security/plugin-signing-key.json`
+
+**Verification points:**
+1. **Install-time** (`plugins/install.ts`): After security scan, before copy. Invalid signatures block install unless `--force`.
+2. **Load-time** (`plugins/manifest-registry.ts`): `signed` and `signatureKeyId` tracked on plugin records.
+3. **Audit** (`security/audit-extra.async.ts`): Unsigned plugins → `info`, untrusted key → `warn`, invalid signature → `critical`.
+
+**Key management:**
+- `generateSigningKey()` → Ed25519 keypair with SHA-256 key ID
+- `loadOrCreateSigningKey()` → Generate on first use, persist to disk
+- `addTrustedKey()` / `removeTrustedKey()` → CRUD for trusted public keys
+- `findTrustedKey(keyId)` → Look up by SHA-256 fingerprint
+
+**Consumer**: `security/plugin-signer.ts` (core crypto), `security/plugin-trust-store.ts` (key management), `plugins/install.ts` (install-time gate), `plugins/manifest.ts` + `manifest-registry.ts` + `registry.ts` + `loader.ts` (signature field propagation)
+
 ### Deferred Items
 
 These findings were assessed but deferred from this scaffolding due to architectural scope:
 
 | Finding | Severity | Why Deferred |
 |---------|----------|-------------|
-| CRIT-02 (plaintext credential storage) | Critical | Requires migration path for all stored tokens; design behind feature flag |
-| CRIT-03 Stage B (Worker Thread isolation) | Critical | Large architectural change; Stage A capability declarations provide interim protection |
-| CRIT-04 (Tailscale header trust) | Critical | Already validates via whois lookup; localhost-only risk |
-| HIGH-03 (exec allowlist arg bypass) | High | Complex argument pattern matching; document limitation |
 | HIGH-04 (`$include` path traversal) | High | Already fixed upstream (`isPathInside` with symlink resolution) |
-| MED-04 (plugin code signing) | Medium | Requires PKI infrastructure |
 | MED-05 (session encryption) | Medium | Requires key management design |
 | MED-06 (embedding content filtering) | Medium | Best implemented as optional security plugin hook |
 | MED-07 (approval request flooding) | Medium | Needs UX design for per-session rate limiting |
 | LOW-01 (device key encryption at rest) | Low | Requires passphrase/keychain integration |
 | LOW-02 (WebSocket payload limits) | Low | Existing limits are reasonable; tighten if needed |
 
+*Previously deferred, now addressed:*
+- **CRIT-02** (plaintext credential storage) — Implemented: AES-256-GCM encryption with keychain/file master key
+- **CRIT-03 Stage B** (Worker Thread isolation) — Implemented: Worker Thread IPC bridge (Stage B-1)
+- **CRIT-03 Stage C** (plugin security consent) — Implemented: Trust-level policy store, brain advisory tool, loader enforcement
+- **CRIT-04** (Tailscale header trust) — Addressed: Trust model documented in "Tailscale Trust Model" section above
+- **HIGH-03** (exec allowlist argument bypass) — Addressed: Interpreter detection, runtime warnings, and audit findings
+- **MED-04** (plugin code signing) — Implemented: Ed25519 signing/verification, trust store, install-time and audit-time verification
+
 ### Test Coverage
 
-The security modules have comprehensive test coverage:
+The security modules have comprehensive test coverage (~443 tests total):
 
-**Unit tests** (`src/security/*.test.ts`): 95 tests across 9 files
-- One test file per security module
+**Unit tests** (`src/security/*.test.ts`): ~135 tests across 13 files
+- One test file per security module (including CRIT-02 and CRIT-03b additions)
 - Covers edge cases, error handling, and boundary conditions
 
-**Integration tests** (`src/security/__integration__/*.test.ts`): 89 tests across 9 files
+**Integration tests** (`src/security/__integration__/*.test.ts`): ~99 tests across 11 files
 - Auth flow composition (secret-equal + audit-log + rate-limiter)
 - DNS rebinding protection (host-validation + origin-check)
 - Environment filtering (env-allowlist in host exec context)

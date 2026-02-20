@@ -121,6 +121,8 @@ export type PluginRecord = {
   configSchema: boolean;
   configUiHints?: Record<string, PluginConfigUiHint>;
   configJsonSchema?: Record<string, unknown>;
+  signed?: boolean;
+  signatureKeyId?: string;
 };
 
 export type PluginRegistry = {

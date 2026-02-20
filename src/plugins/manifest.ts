@@ -9,6 +9,12 @@ export const PLUGIN_MANIFEST_FILENAMES = [PLUGIN_MANIFEST_FILENAME] as const;
 
 export type PluginIsolation = "worker" | "none";
 
+export type PluginManifestSignature = {
+  sig: string;
+  keyId: string;
+  signedAt: number;
+};
+
 export type PluginManifest = {
   id: string;
   configSchema: Record<string, unknown>;
@@ -21,6 +27,7 @@ export type PluginManifest = {
   description?: string;
   version?: string;
   uiHints?: Record<string, PluginConfigUiHint>;
+  signature?: PluginManifestSignature;
 };
 
 export type PluginManifestLoadResult =
@@ -86,6 +93,22 @@ export function loadPluginManifest(rootDir: string): PluginManifestLoadResult {
     uiHints = raw.uiHints as Record<string, PluginConfigUiHint>;
   }
 
+  let signature: PluginManifestSignature | undefined;
+  if (isRecord(raw.signature)) {
+    const sigObj = raw.signature;
+    if (
+      typeof sigObj.sig === "string" &&
+      typeof sigObj.keyId === "string" &&
+      typeof sigObj.signedAt === "number"
+    ) {
+      signature = {
+        sig: sigObj.sig as string,
+        keyId: sigObj.keyId as string,
+        signedAt: sigObj.signedAt as number,
+      };
+    }
+  }
+
   return {
     ok: true,
     manifest: {
@@ -100,6 +123,7 @@ export function loadPluginManifest(rootDir: string): PluginManifestLoadResult {
       description,
       version,
       uiHints,
+      signature,
     },
     manifestPath,
   };
