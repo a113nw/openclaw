@@ -442,7 +442,7 @@ These findings were assessed but deferred from this scaffolding due to architect
 |---------|----------|-------------|
 | HIGH-04 (`$include` path traversal) | High | Already fixed upstream (`isPathInside` with symlink resolution) |
 | MED-05 (session encryption) | Medium | Addressed: transport security guidance + runtime warning |
-| MED-06 (embedding content filtering) | Medium | Best implemented as optional security plugin hook |
+| MED-06 (embedding content filtering) | Medium | Addressed: `before_memory_index` hook + default content filter |
 | MED-07 (approval request flooding) | Medium | Needs UX design for per-session rate limiting |
 | LOW-01 (device key encryption at rest) | Low | Requires passphrase/keychain integration |
 | LOW-02 (WebSocket payload limits) | Low | Existing limits are reasonable; tighten if needed |
@@ -455,6 +455,7 @@ These findings were assessed but deferred from this scaffolding due to architect
 - **HIGH-03** (exec allowlist argument bypass) — Addressed: Interpreter detection, runtime warnings, and audit findings
 - **MED-04** (plugin code signing) — Implemented: Ed25519 signing/verification, trust store, install-time and audit-time verification
 - **MED-05** (session encryption) — Addressed: transport security guidance + runtime warning in `server-startup-log.ts`
+- **MED-06** (embedding content filtering) — Addressed: `before_memory_index` plugin hook + default `filterSensitiveContent` filter in `embedding-content-filter.ts`
 
 ### Test Coverage
 
