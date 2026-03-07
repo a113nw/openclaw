@@ -4,6 +4,11 @@ import dotenv from "dotenv";
 import { resolveConfigDir } from "../utils.js";
 
 export function loadDotEnv(opts?: { quiet?: boolean }) {
+  // direnv has already loaded env vars for this shell; avoid duplicate parsing.
+  if (process.env.DIRENV_DIR) {
+    return;
+  }
+
   const quiet = opts?.quiet ?? true;
 
   // Load from process CWD first (dotenv default).
