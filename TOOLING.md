@@ -36,13 +36,8 @@ All projects follow a standardized tooling setup:
 
 ## This Project: entmoot-openclaw
 
-**Status: Mostly compliant.** TypeScript/pnpm monorepo. Uses its own dotenv loading internally.
+**Status: Compliant.** TypeScript/pnpm monorepo. Uses its own dotenv loading internally (guarded by `DIRENV_DIR` check).
 
-### TODO
-
-- [ ] Add `.tool-versions` with `nodejs 22.12.0`
-- [ ] Add `.envrc`:
-  ```
-  dotenv_if_exists .env
-  ```
-- [ ] Run `direnv allow` after adding `.envrc`
+- `.tool-versions` pins `nodejs 22.12.0`
+- `.envrc` loads `.env` and `~/.openclaw/.env` via direnv
+- `src/infra/dotenv.ts` skips duplicate parsing when direnv is active
